@@ -1,7 +1,14 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import {
+  forwardRef,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ConfigService } from 'src/config/config.service';
+import { ProjectsService } from 'src/projects/projects.service';
 import { SystemService } from 'src/system/system.service';
 import { UtilsService } from 'src/utils/utils.service';
 
@@ -12,8 +19,11 @@ export class InvoicesService {
     @InjectModel('PendingInvoice')
     private readonly pendingInvoiceModel: Model<any>,
     @InjectModel('Transaction') private readonly transactionModel: Model<any>,
+    @Inject(forwardRef(() => ProjectsService))
+    private readonly projectsService: ProjectsService,
+    // @InjectModel('Project') private readonly projectModel: Model<any>,
     private readonly utilsService: UtilsService,
-    private readonly systemService: SystemService,
+    private readonly systemService: SystemService, // private readonly projectsService: ProjectsService,
   ) {}
 
   async createInvoice(user, orgId, projectId, paymentPhaseId, dto) {
@@ -30,7 +40,6 @@ export class InvoicesService {
       dto.raisedOn !== undefined ? new Date(dto.raisedOn) : undefined;
     dto.dueDate = dto.dueDate !== undefined ? new Date(dto.dueDate) : undefined;
     // dto.settledOn = dto.settledOn !== undefined ? new Date(dto.settledOn) : undefined;
-    dto.paymentPhase = paymentPhaseId;
     dto.project = projectId;
     dto.organisation = orgId;
     dto.createdBy = user._id;
@@ -48,14 +57,16 @@ export class InvoicesService {
     }
     dto.totalTaxes = this.utilsService.encryptData(String(dto.totalTaxes));
     dto.basicAmount = 0;
+    dto.paymentPhaseIds = [];
     if (dto.services && dto.services.length > 0) {
       for (const ele of dto.services) {
-        ele.amount = parseFloat(ele.quantity) * parseFloat(ele.rate);
+        // ele.amount = parseFloat(ele.quantity) * parseFloat(ele.rate);
         dto.basicAmount += parseFloat(ele.amount);
-        ele.rate = this.utilsService.encryptData(String(ele.rate));
-        ele.quantity = this.utilsService.encryptData(String(ele.quantity));
+        // ele.rate = this.utilsService.encryptData(String(ele.rate));
+        // ele.quantity = this.utilsService.encryptData(String(ele.quantity));
         ele.amount = this.utilsService.encryptData(String(ele.amount));
-        ele.description = this.utilsService.encryptData(ele.description);
+        dto.paymentPhaseIds.push(ele.paymentPhaseId);
+        // ele.description = this.utilsService.encryptData(ele.description);
       }
     }
     dto.basicAmount = this.utilsService.encryptData(String(dto.basicAmount));
@@ -90,13 +101,15 @@ export class InvoicesService {
     dto.serialSequence = parseInt(serialSequence[serialSequence.length - 1]);
     let invoice = new this.invoiceModel(dto);
 
+    await this.projectsService.updatePaymentPhaseDueAmount(dto.services);
+
     invoice = await invoice.save();
 
     invoice = await this.utilsService.decryptInvoiceData(invoice);
-    this.clearRaisedInvoice(projectId, paymentPhaseId);
+    // this.clearRaisedInvoice(projectId, paymentPhaseId);
 
     return {
-      data: { invoice },
+      data: { dto },
       success: true,
       message: 'Invoice created successfully.',
     };
@@ -220,9 +233,7 @@ export class InvoicesService {
   }
 
   async deleteInvoice(user, orgId, projectId, invoiceId) {
-    console.log('first', invoiceId, typeof invoiceId);
-    const a = await this.transactionModel.find({ invoice: invoiceId }).exec();
-    console.log('a', a);
+    await this.transactionModel.find({ invoice: invoiceId }).exec();
     // console.log('a', JSON.stringify(a, null, 2));
     // const transactions = await this.getTransactionsApp(
     //   { invoice: invoiceId, project: projectId },
@@ -342,7 +353,7 @@ export class InvoicesService {
     let invoice = await this.invoiceModel
       .findOne({ organisation: orgId, _id: invoiceId })
       .populate('project')
-      .populate('paymentPhase')
+      .populate('services.paymentPhaseId')
       .populate('customer')
       .populate('account')
       .populate('subsiduary')
@@ -397,9 +408,25 @@ export class InvoicesService {
     //     }
     //   },
     // ])
-    invoice.paymentPhase = await this.utilsService.decryptPaymentPhase(
-      invoice.paymentPhase,
-    );
+
+    const decryptedServices = [];
+    console.log('invoice', invoice.paymentPhase);
+
+    if (invoice.paymentPhase) {
+      invoice.paymentPhase = await this.utilsService.decryptPaymentPhase(
+        invoice.paymentPhase,
+      );
+    } else {
+      for (const el of invoice.services) {
+        const a = await this.utilsService.decryptPaymentPhase(
+          el.paymentPhaseId,
+        );
+        console.log('a', a);
+        decryptedServices.push(a);
+      }
+      console.log('decryptedServices', decryptedServices);
+    }
+
     invoice.customer = await this.utilsService.decryptCustomerData(
       invoice.customer,
     );
@@ -714,8 +741,6 @@ export class InvoicesService {
       userId,
     );
     for (let ele of transactions) {
-      console.log('ele', ele?.createdBy);
-      console.log('userId', userId);
       // 61543116d8aa0b00169fbfc4
       // 61543116d8aa0b00169fbfc4
       ele = await this.decryptTransactionData(ele);

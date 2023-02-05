@@ -7,9 +7,8 @@ import {
 } from 'class-validator';
 
 export class Services {
-  quantity: number;
-  description: string;
-  rate: number;
+  paymentPhaseId: number;
+  amount: string;
 }
 
 export class Taxes {
