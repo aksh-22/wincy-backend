@@ -15,7 +15,21 @@ import { NotificationsModule } from 'src/notifications/notifications.module';
 import { TasksModule } from 'src/tasks/tasks.module';
 
 @Module({
-  imports: [forwardRef(() => TasksModule), NotificationsModule, UtilsModule, SystemModule, ActivitiesModule,forwardRef(()=>ProjectsModule), MongooseModule.forFeature([{ name: 'User', schema: UserSchema }, { name: 'Project', schema: ProjectSchema }, {name: 'Bug', schema: BugSchema}, {name: 'BugReport', schema: BugReportSchema}, {name: 'Counter', schema: CounterSchema}])], 
+  imports: [
+    forwardRef(() => TasksModule),
+    NotificationsModule,
+    UtilsModule,
+    SystemModule,
+    ActivitiesModule,
+    forwardRef(() => ProjectsModule),
+    MongooseModule.forFeature([
+      { name: 'User', schema: UserSchema },
+      { name: 'Project', schema: ProjectSchema },
+      { name: 'Bug', schema: BugSchema },
+      { name: 'BugReport', schema: BugReportSchema },
+      { name: 'Counter', schema: CounterSchema },
+    ]),
+  ],
   providers: [BugsService],
   controllers: [BugsController],
   exports: [BugsService],

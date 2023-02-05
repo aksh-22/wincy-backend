@@ -14,12 +14,22 @@ import { CustomerSchema } from './schema/customer.schema';
 import { AccountSchema } from './schema/account.schema';
 
 @Module({
-  imports : [forwardRef(() => UsersModule), UtilsModule, forwardRef(() => ProjectsModule), MongooseModule.forFeature([{ name: 'Organisation', schema: OrganisationSchema }, { name: 'Invitation', schema: InvitationSchema}, { name: 'Subsiduary', schema: SubsiduarySchema}, { name: 'Customer', schema: CustomerSchema}, { name: 'Account', schema: AccountSchema}]),
+  imports: [
+    forwardRef(() => UsersModule),
+    UtilsModule,
+    forwardRef(() => ProjectsModule),
+    MongooseModule.forFeature([
+      { name: 'Organisation', schema: OrganisationSchema },
+      { name: 'Invitation', schema: InvitationSchema },
+      { name: 'Subsiduary', schema: SubsiduarySchema },
+      { name: 'Customer', schema: CustomerSchema },
+      { name: 'Account', schema: AccountSchema },
+    ]),
     JwtModule.register({
       secret: ConfigService.keys.JWT_SECRET,
-      signOptions: { expiresIn: '6000s'},
-      verifyOptions: { ignoreExpiration: true}
-    })
+      signOptions: { expiresIn: '6000s' },
+      verifyOptions: { ignoreExpiration: true },
+    }),
   ],
   providers: [OrganisationsService],
   controllers: [OrganisationsController],
