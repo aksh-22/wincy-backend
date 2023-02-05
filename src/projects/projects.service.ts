@@ -114,7 +114,7 @@ export class ProjectsService {
 
   async updateProject(user, dto, logo, projectId, orgId) {
     let project;
-    if (user.type == 'Member+' || user.type == 'Member++') {
+    if (user.type == 'Member+') {
       project = await this.projectModel.findOne({ _id: projectId }).exec();
     } else {
       project = await this.getProjectSensitivePopu({ _id: projectId });
@@ -189,7 +189,7 @@ export class ProjectsService {
       );
       dto.logo = project.logo;
     }
-    if (user.type == 'Admin') {
+    if (user.type == 'Admin' || user.type == 'Member++') {
       project.clientData.name = dto.client
         ? await this.utilsService.encryptData(dto.client)
         : project.clientData?.name;
@@ -199,7 +199,6 @@ export class ProjectsService {
       project.clientData.email = dto.clientEmail
         ? await this.utilsService.encryptData(dto.clientEmail)
         : project.clientData?.email;
-
       project.paymentInfo.note = dto.amountNote
         ? await this.utilsService.encryptData(dto.amountNote)
         : project.paymentInfo.amountNote;
@@ -781,10 +780,11 @@ export class ProjectsService {
           {
             organisation: orgId,
             status,
-            projectType:
-              projectType === Project_Type.DEVELOPMENT
-                ? [undefined, projectType]
-                : projectType,
+            projectType: {
+              $in: [Project_Type.DEVELOPMENT, undefined].includes(projectType)
+                ? [undefined, Project_Type.DEVELOPMENT]
+                : [projectType],
+            },
           },
           projections,
         )
@@ -795,10 +795,14 @@ export class ProjectsService {
           {
             organisation: orgId,
             status,
-            projectType:
-              projectType === Project_Type.DEVELOPMENT
-                ? [undefined, projectType]
-                : projectType,
+            projectType: {
+              $in: [Project_Type.DEVELOPMENT, undefined].includes(projectType)
+                ? [undefined, Project_Type.DEVELOPMENT]
+                : [projectType],
+            },
+            // projectType === Project_Type.DEVELOPMENT
+            //   ? { $in: [undefined, projectType] }
+            //   : projectType,
             $or: [{ team: user._id }, { projectHead: user._id }],
           },
           projections,
@@ -1503,6 +1507,10 @@ export class ProjectsService {
         dto.amount !== undefined
           ? this.utilsService.encryptData(String(dto.amount))
           : undefined,
+      dueAmount:
+        dto.amount !== undefined
+          ? this.utilsService.encryptData(String(dto.amount))
+          : undefined,
     });
     paymentPhase = await paymentPhase.save();
 
@@ -1528,6 +1536,19 @@ export class ProjectsService {
       );
     }
 
+    let newAmount = paymentPhase.amount;
+
+    if (dto.amount) {
+      let dueAmount = paymentPhase.dueAmount;
+      newAmount = this.utilsService.encryptData(dto.amount);
+      if (newAmount < dueAmount) {
+        throw new HttpException(
+          'Amount can not be lower than due amount',
+          HttpStatus.NOT_ACCEPTABLE,
+        );
+      }
+    }
+
     paymentPhase.title = dto.title ? dto.title : paymentPhase.title;
     paymentPhase.description = dto.description
       ? dto.description
@@ -1535,9 +1556,7 @@ export class ProjectsService {
     paymentPhase.currency = dto.currency
       ? await this.utilsService.encryptData(dto.currency)
       : paymentPhase.currency;
-    paymentPhase.amount = dto.amount
-      ? await this.utilsService.encryptData(dto.amount)
-      : paymentPhase.amount;
+    paymentPhase.amount = newAmount;
 
     paymentPhase = await paymentPhase.save({ new: true });
 
@@ -1681,21 +1700,84 @@ export class ProjectsService {
     };
   }
 
+  async getAllPaymentPhasesWithoutPop(paymentPhaseIds: string | Array<string>) {
+    return await this.paymentPhaseModel.find({ _id: paymentPhaseIds });
+  }
+
+  async updatePaymentPhaseDueAmount(data: Array<any>) {
+    const paymentPhases = await this.getAllPaymentPhasesWithoutPop(
+      data.map((el) => el.paymentPhaseId),
+    );
+    const updatePaymentPhases = [];
+    for (const el of paymentPhases) {
+      const index = data.findIndex(
+        (el2) => String(el2.paymentPhaseId) === String(el._id),
+      );
+
+      let dueAmount = Number(this.utilsService.decryptData(el.dueAmount));
+      console.log('dueAmount', dueAmount);
+      if (dueAmount > 0) {
+        let mainAmount = Number(this.utilsService.decryptData(el.amount));
+        console.log('mainAmount', mainAmount);
+        let newDueAmount = Number(
+          this.utilsService.decryptData(data[index].amount),
+        );
+        console.log('newAmount', newDueAmount);
+        if (dueAmount >= newDueAmount) {
+          let updateDueAmount: any = dueAmount - newDueAmount;
+          console.log('updateDueAmount', updateDueAmount);
+
+          // amount = amount - data[index].amount;
+
+          // amount = Number(this.utilsService.encryptData(amount));
+
+          if (Number(updateDueAmount) === 0) {
+            console.log('Paid');
+            el.status = 'Completed';
+            console.log('el', el);
+          } else if (Number(mainAmount) > Number(updateDueAmount)) {
+            console.log('Partially Paid');
+            el.status = 'Partially Paid';
+            console.log('el', el);
+          }
+          updateDueAmount = this.utilsService.encryptData(updateDueAmount + '');
+          el.dueAmount = updateDueAmount;
+          updatePaymentPhases.push(el);
+        } else {
+          throw new HttpException(
+            'Amount can not be greater than remaining amount',
+            HttpStatus.NOT_ACCEPTABLE,
+          );
+        }
+      }
+      // amount = Number(this.utilsService.encryptData(el.dueAmount));
+    }
+    for (const element of updatePaymentPhases) {
+      console.log('element', element);
+      console.log('-----------------');
+      const pay = await element.save();
+      console.log('pay', pay);
+      console.log('>>>>>>>>>>>>>>>>>');
+    }
+  }
+
   async getPaymentPhases(orgId, projectId) {
     let paymentPhases = await this.paymentPhaseModel
       .find({ organisation: orgId, project: projectId })
       .populate('milestones')
       .lean();
+    console.log('paymentPhases', paymentPhases);
     for (let ele of paymentPhases) {
       ele = await this.utilsService.decryptPaymentPhase(ele);
       ele.milestoneIds = [];
       ele.milestones.forEach((ele1) => {
         ele.milestoneIds.push(ele1._id);
       });
-
-      ele.progress = await this.tasksService.getMilestoneStatusCountPaymentPhase(
-        ele.milestoneIds,
-      );
+      if (ele.milestoneIds.length) {
+        ele.progress = await this.tasksService.getMilestoneStatusCountPaymentPhase(
+          ele.milestoneIds,
+        );
+      }
     }
     return { data: { paymentPhases }, success: true, message: '' };
   }

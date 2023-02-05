@@ -80,7 +80,8 @@ export const TaskSchema = new mongoose.Schema(
     statusUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     parent: { type: mongoose.Schema.Types.ObjectId, ref: 'Task' },
     childTasks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }],
-    mainParent: { type: mongoose.Schema.Types.ObjectId, ref: 'Task' },
+    Eod: [{ type: mongoose.Schema.Types.ObjectId, ref: 'EOD' }],
+    // mainParent: { type: mongoose.Schema.Types.ObjectId, ref: 'Task' },
     onHoldReason: { type: String, trim: true },
     lastUpdatedBy: {
       type: mongoose.Schema.Types.ObjectId,

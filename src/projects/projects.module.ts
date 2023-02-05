@@ -17,9 +17,25 @@ import { PaymentPhaseSchema } from './schema/paymentPhaser.schema';
 import { InvoicesModule } from 'src/invoices/invoices.module';
 
 @Module({
-  imports: [InvoicesModule, ActivitiesModule, NotificationsModule, UtilsModule, forwardRef(() => OrganisationsModule),forwardRef(() => UsersModule), SystemModule, forwardRef(() => BugsModule), forwardRef(() => TasksModule), MongooseModule.forFeature([{ name: 'Project', schema: ProjectSchema }, { name: 'Attachment', schema: AttachmentSchema }, { name: 'Section', schema: SectionSchema}, { name: 'PaymentPhase', schema: PaymentPhaseSchema}])],
+  imports: [
+    InvoicesModule,
+    ActivitiesModule,
+    NotificationsModule,
+    UtilsModule,
+    forwardRef(() => OrganisationsModule),
+    forwardRef(() => UsersModule),
+    SystemModule,
+    forwardRef(() => BugsModule),
+    forwardRef(() => TasksModule),
+    MongooseModule.forFeature([
+      { name: 'Project', schema: ProjectSchema },
+      { name: 'Attachment', schema: AttachmentSchema },
+      { name: 'Section', schema: SectionSchema },
+      { name: 'PaymentPhase', schema: PaymentPhaseSchema },
+    ]),
+  ],
   providers: [ProjectsService],
   controllers: [ProjectsController],
-  exports: [ProjectsService]
+  exports: [ProjectsService],
 })
 export class ProjectsModule {}

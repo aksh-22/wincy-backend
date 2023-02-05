@@ -1,20 +1,28 @@
-import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
-import { ApiProperty } from "@nestjs/swagger";
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
-export enum Priorities{
+export enum Priorities {
   High = 'High',
   Medium = 'Medium',
-  Low = 'Low'
+  Low = 'Low',
 }
 
-export enum Status{
-  Completed = "Completed",
-  NotStarted = "NotStarted",
-  Active = "Active",
-  OnHold = "OnHold",
-  WaitingForReview = "WaitingForReview", 
-  UnderReview = "UnderReview", 
-  ReviewFailed = "ReviewFailed",
+export enum Status {
+  Completed = 'Completed',
+  NotStarted = 'NotStarted',
+  Active = 'Active',
+  OnHold = 'OnHold',
+  WaitingForReview = 'WaitingForReview',
+  UnderReview = 'UnderReview',
+  ReviewFailed = 'ReviewFailed',
 }
 
 export class UpdateTaskDto {
@@ -54,4 +62,9 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsString()
   readonly onHoldReason: string;
+}
+
+export class UpdateTaskDescriptionDto {
+  @IsString()
+  readonly description: string;
 }
