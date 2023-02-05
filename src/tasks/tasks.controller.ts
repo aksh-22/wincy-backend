@@ -17,6 +17,7 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { Roles } from 'src/auth/roles.decorator';
 import { Role } from 'src/auth/roles.enum';
 import { RolesGuard } from 'src/auth/roles.guard';
+import { CreateEodDto } from './dto/createEod.dto';
 import { CreateMilestoneDto } from './dto/createMilestone.dto';
 import { createSubTaskDto } from './dto/createSubTask.dto';
 import { CreateTaskDto } from './dto/createTask.dto';
@@ -25,7 +26,7 @@ import { MoveTasksDto } from './dto/moveTasks.dto';
 import { UpdateMilestoneDto } from './dto/updateMilestone.dto';
 import { MultiTaskUpdateDto } from './dto/updateMultiTask.dto';
 import { UpdateSubTaskDto } from './dto/updateSubTask.dto';
-import { UpdateTaskDto } from './dto/updateTask.dto';
+import { UpdateTaskDescriptionDto, UpdateTaskDto } from './dto/updateTask.dto';
 import { UpdateTodoDto } from './dto/updateTodo.dto';
 import { TasksService } from './tasks.service';
 
@@ -149,6 +150,27 @@ export class TasksController {
 
   //=================================================//
 
+  // Not Yet Tested
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Patch('description/:organisation/:task')
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
+  async updateTaskDescription(
+    @Request() req,
+    @Param('organisation') orgId: string,
+    @Param('task') taskId: string,
+    @Body() dto: UpdateTaskDescriptionDto,
+  ) {
+    const { user } = req;
+    return await this.tasksService.updateTaskDescription(
+      user,
+      dto,
+      orgId,
+      taskId,
+    );
+  }
+
+  //=================================================//
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Get(':organisation/:milestone')
   @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
@@ -223,15 +245,19 @@ export class TasksController {
   }
   //=================================================//
 
-  // @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Get('project/:organisation/:project')
-  // @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
-  async projectTasks() {
-    // @Param('project') projectId: string, // @Param('organisation') orgId: string, // @Request() req,
-    return { data: 'test' };
-    // const { user } = req;
-    // return await this.tasksService.getProjectTasks(user, orgId, projectId);
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
+  async projectTasks(
+    @Param('project') projectId: string,
+    @Param('organisation') orgId: string,
+    @Request() req,
+    // return { data: 'test' };
+  ) {
+    const { user } = req;
+    return await this.tasksService.getProjectTasks(user, orgId, projectId);
   }
+
   //=================================================//
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -282,6 +308,42 @@ export class TasksController {
       taskId,
     );
   }
+
+  // //===================== Create Eod ============================//
+
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Post('eods/:organisation/:project/:task')
+  // @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
+  // async createEod(
+  //   @Request() req,
+  //   @Param('organisation') orgId: string,
+  //   @Param('project') projectId: string,
+  //   @Param('task') taskId: string,
+  //   @Body() dto: CreateEodDto,
+  // ) {
+  //   const { user } = req;
+  //   return await this.tasksService.createEod(
+  //     user,
+  //     orgId,
+  //     projectId,
+  //     dto,
+  //     taskId,
+  //   );
+  // }
+
+  // //===================== Get Eod ============================//
+
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Get('edos/:organisation/:project/:task')
+  // @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
+  // async getEod(
+  //   @Request() req,
+  //   @Param('task') taskId: string,
+  //   @Param('project') projectId: string,
+  // ) {
+  //   const { user } = req;
+  //   return await this.tasksService.getTaskEods(user, projectId, taskId);
+  // }
 
   //=================================================//
 

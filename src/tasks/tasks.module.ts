@@ -17,6 +17,7 @@ import { MilestoneSortSchema } from './schema/milestone_sort.schema';
 import { ActivitiesModule } from 'src/activities/activities.module';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 import { BugsModule } from 'src/bugs/bugs.module';
+// import { EodSchema } from './schema/EOD.schema';
 
 @Module({
   imports: [
@@ -30,13 +31,13 @@ import { BugsModule } from 'src/bugs/bugs.module';
       { name: 'Milestone', schema: MilestoneSchema },
       { name: 'Task', schema: TaskSchema },
       { name: 'Task_Report', schema: TaskReportSchema },
-      { name: 'Todo', schema: TodoSchema},
-      { name: 'TodoSort', schema: TodoSortSchema},
-      { name: 'Module', schema: ModuleSchema},
-      { name: 'TaskSort', schema: TaskSortSchema},
-      { name: 'ModuleSort', schema: ModuleSortSchema},
-      { name: 'MilestoneSort', schema: MilestoneSortSchema},
-
+      { name: 'Todo', schema: TodoSchema },
+      // { name: 'EOD', schema: EodSchema },
+      { name: 'TodoSort', schema: TodoSortSchema },
+      { name: 'Module', schema: ModuleSchema },
+      { name: 'TaskSort', schema: TaskSortSchema },
+      { name: 'ModuleSort', schema: ModuleSortSchema },
+      { name: 'MilestoneSort', schema: MilestoneSortSchema },
     ]),
   ],
   controllers: [TasksController],

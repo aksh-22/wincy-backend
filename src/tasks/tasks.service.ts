@@ -32,6 +32,7 @@ export class TasksService {
     @InjectModel('Milestone') private readonly milestoneModel: Model<any>,
     @InjectModel('Task') private readonly taskModel: Model<any>,
     @InjectModel('Todo') private readonly todoModel: Model<any>,
+    // @InjectModel('EOD') private readonly eodModel: Model<any>,
     @InjectModel('TodoSort') private readonly todoSortModel: Model<any>,
     @InjectModel('TaskSort') private readonly taskSortModel: Model<any>,
     @InjectModel('Module') private readonly moduleModel: Model<any>,
@@ -363,19 +364,23 @@ export class TasksService {
 
   //========================================================//
   async getMilestoneStatusCountPaymentPhase(ids) {
-    const count = {};
-    const milestones = await this.milestoneModel.aggregate([
-      { $match: { _id: { $in: ids } } },
-      { $group: { _id: { status: '$status' }, count: { $sum: 1 } } },
-    ]);
-    milestones.forEach((element) => {
-      // let project = String(element._id.project);
-      // if(!count[project]){
-      //   count[project] = {};
-      // }
-      count[element._id.status] = element.count;
-    });
-    return count;
+    try {
+      const count = {};
+      const milestones = await this.milestoneModel.aggregate([
+        { $match: { _id: { $in: ids } } },
+        { $group: { _id: { status: '$status' }, count: { $sum: 1 } } },
+      ]);
+      milestones.forEach((element) => {
+        // let project = String(element._id.project);
+        // if(!count[project]){
+        //   count[project] = {};
+        // }
+        count[element._id.status] = element.count;
+      });
+      return count;
+    } catch (error) {
+      console.error('Error in : getMilestoneStatusCountPaymentPhase', error);
+    }
   }
 
   //========================================================//
@@ -960,6 +965,68 @@ export class TasksService {
       this.updateMilestoneStatus(admin._id, task.milestone);
     }
     task = await this.getTaskPopulated({ _id: task._id });
+    return {
+      success: true,
+      data: { task },
+      message: 'Task Successfully updated.',
+    };
+  }
+
+  //========================================================//
+
+  async updateTaskDescription(admin, dto, orgId, taskId) {
+    let task = await this.getTask({ _id: taskId });
+    const project = await this.projectsService.getAppProject(
+      { _id: task.project },
+      {},
+    );
+
+    if (!project || String(project.organisation) != orgId) {
+      throw new HttpException(
+        "Given set of organisation, project, milestone, and task doesn't add up",
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const oldTask = JSON.parse(JSON.stringify(task._doc));
+
+    const team = [];
+    project.team?.forEach((element) => {
+      team.push(String(element._id));
+    });
+    project.projectHead ? team.push(String(project.projectHead)) : undefined;
+
+    const isUserInTeam = team.includes(String(admin._id));
+    if (admin.type == 'Member' || admin.type == 'Member+') {
+      if (!isUserInTeam) {
+        throw new HttpException(
+          'You are not authorised to perform this operation!',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+    // if (!isUserInTeam) {
+    //   throw new HttpException(
+    //     'You are not authorised to perform this operation!',
+    //     HttpStatus.BAD_REQUEST,
+    //   );
+    // }
+
+    task.description = dto.description;
+
+    task = await task.save({ new: true });
+
+    this.utilsService.createBasicInfoActs(
+      admin._id,
+      'Update',
+      'Task',
+      { ...dto },
+      undefined,
+      oldTask,
+      task,
+      project._id,
+    );
+
     return {
       success: true,
       data: { task },
@@ -1599,6 +1666,47 @@ export class TasksService {
     const tasksDetailed = await this.taskModel
       .find({ _id: { $in: tasks }, project: projectId })
       .exec();
+
+    console.log('tasksDetailed', tasksDetailed);
+    let parentTaskIds = {};
+
+    tasksDetailed.forEach((el) => {
+      console.log('el.parent', el.parent);
+      if (el.parent) {
+        if (parentTaskIds[el.parent]) {
+          parentTaskIds[el.parent].push(String(el._id));
+        } else {
+          parentTaskIds[el.parent] = [String(el._id)];
+        }
+      }
+      // if (!parentTaskIds.includes(String(el.parent))) {
+      //   parentTaskIds.push(String(el.parent));
+      // }
+    });
+
+    console.log('parentTaskIds', parentTaskIds);
+
+    const parentTasks = await this.taskModel.find({
+      _id: Object.keys(parentTaskIds),
+    });
+
+    console.log('parentTasks', parentTasks);
+
+    for (let index = 0; index < parentTasks.length; index++) {
+      const element = parentTasks[index];
+      const indexes = [];
+      element.childTasks.forEach((el, index) => {
+        if (
+          parentTaskIds?.[String(element._id)] &&
+          parentTaskIds[String(element._id)].includes(String(el))
+        ) {
+          indexes.push(index);
+          element.childTasks.splice(index, 1);
+        }
+      });
+      const newEl = await element.save();
+    }
+
     const milestoneObj = {};
     tasksDetailed.forEach((ele) => {
       if (!milestoneObj[String(ele.milestone)]) {
@@ -1791,6 +1899,131 @@ export class TasksService {
 
     return { data: { todo }, message: '', success: true };
   }
+
+  // //==================== Create Eods====================================//
+
+  // async createEod(user, orgId, projectId, dto, taskId) {
+  //   const project = await this.projectsService.getAppProject(
+  //     { _id: projectId, organisation: orgId },
+  //     {},
+  //   );
+  //   if (!project) {
+  //     throw new HttpException(
+  //       'No such project exists in this organisation!',
+  //       HttpStatus.BAD_REQUEST,
+  //     );
+  //   }
+
+  //   const task = await this.taskModel.findOne({ _id: taskId }).exec();
+  //   const team = [];
+  //   task.assignees.forEach((element) => {
+  //     team.push(String(element));
+  //   });
+
+  //   if (
+  //     // !['Admin', 'Member++'].includes(user.type) &&
+  //     // String(user._id) != String(project.projectHead) &&
+  //     !team.includes(dto.assignee)
+  //   ) {
+  //     throw new HttpException(
+  //       'User is not associated with the this project!',
+  //       HttpStatus.BAD_REQUEST,
+  //     );
+  //   }
+
+  //   // if (dto.assignee) {
+  //   //   if (!team.includes(dto.assignee)) {
+  //   //     dto.assignee = undefined;
+  //   //   }
+  //   // }
+
+  //   let eod = new this.eodModel(dto);
+  //   eod.project = projectId;
+  //   eod.task = taskId;
+  //   eod.createdBy = user._id;
+
+  //   eod = await eod.save();
+
+  //   if (task?.Eod.length) {
+  //     task.Eod = [...task.Eod, eod._id];
+  //   } else {
+  //     task.Eod = [eod._id];
+  //   }
+
+  //   task.save();
+
+  //   this.utilsService.createBasicInfoActs(
+  //     user._id,
+  //     'Create',
+  //     'Eod',
+  //     undefined,
+  //     { description: eod.description },
+  //     undefined,
+  //     { _id: eod._id },
+  //     project._id,
+  //   );
+
+  //   return { data: { eod }, message: '', success: true };
+  // }
+
+  // //==================== Get Eods====================================//
+
+  // async getTaskEods(user, projectId, taskId) {
+  //   const team = [];
+  //   const project = await this.projectsService.getAppProject(
+  //     { _id: projectId },
+  //     {},
+  //   );
+  //   project.team.forEach((element) => {
+  //     team.push(String(element));
+  //   });
+  //   !project.projectHead || team.push(String(project.projectHead));
+
+  //   if (
+  //     !['Admin', 'Member++'].includes(user.type) &&
+  //     !team.includes(String(user._id))
+  //   ) {
+  //     throw new HttpException(
+  //       'User is not authorised to perform this task!',
+  //       HttpStatus.BAD_REQUEST,
+  //     );
+  //   }
+
+  //   const edos = await this.eodModel.aggregate([
+  //     {
+  //       $match: { task: mongoose.Types.ObjectId(taskId) },
+  //     },
+  //     {
+  //       $lookup: {
+  //         from: 'todoSorts',
+  //         localField: '_id',
+  //         foreignField: 'todo',
+  //         as: 'sequence',
+  //       },
+  //     },
+  //     {
+  //       $sort: { 'sequence.sequence': 1 },
+  //     },
+  //     {
+  //       $lookup: {
+  //         from: 'users',
+  //         localField: '_id',
+  //         foreignField: '_id',
+  //         as: '_id',
+  //       },
+  //     },
+  //     {
+  //       $project: {
+  //         '_id.sessions': 0,
+  //         '_id.password': 0,
+  //         '_id.accountDetails': 0,
+  //         '_id.projects': 0,
+  //       },
+  //     },
+  //   ]);
+
+  //   return { data: { edos }, success: true, message: '' };
+  // }
 
   //========================================================//
 
@@ -2434,7 +2667,8 @@ export class TasksService {
         module._id,
       );
       const newTasksIds = newTasks.map((el) => el._id);
-      milestone.tasks.push(newTasksIds);
+      milestone.tasks = [...milestone.tasks, ...newTasksIds];
+      // milestone.tasks.push(newTasksIds);
       milestone.save();
     } else if (dto.module) {
       const milestone = await this.milestoneModel
@@ -2493,8 +2727,8 @@ export class TasksService {
       );
 
       const newTasksIds = newTasks.map((el) => el._id);
-      console.log('newTasksIds', newTasksIds);
-      milestone.tasks = [...newTasksIds, ...milestone.tasks];
+      milestone.tasks = [...milestone.tasks, ...newTasksIds];
+      // milestone.tasks.push(newTasksIds);
       milestone.save();
     }
 
@@ -2510,36 +2744,34 @@ export class TasksService {
     for (let index = 0; index < newTasks.length; index++) {
       const element = newTasks[index];
       const parentId = element._id;
-      if (element.childTasks.length) {
-        const childTasks = await this.taskModel
-          .find({ _id: element.childTasks })
-          .exec();
 
-        const newChildTasksToCopy = childTasks.map((el) => {
-          return {
-            title: el.title,
-            description: el.description,
-            status: 'NotStarted',
-            createdBy: userId,
-            milestone: milestoneId,
-            project: projectId,
-            dueDate: undefined,
-            module: moduleId,
-            parent: parentId,
-          };
-        });
+      const childTasks = await this.taskModel
+        .find({ _id: element.childTasks })
+        .exec();
 
-        const newChildTasks = await this.taskModel.create(newChildTasksToCopy);
+      const newChildTasksToCopy = childTasks.map((el) => {
+        return {
+          title: el.title,
+          description: el.description,
+          status: 'NotStarted',
+          createdBy: userId,
+          milestone: milestoneId,
+          project: projectId,
+          dueDate: undefined,
+          module: moduleId,
+          parent: parentId,
+          assignees: el.assignees,
+        };
+      });
 
-        let newChildTasksIds;
+      const newChildTasks = await this.taskModel.create(newChildTasksToCopy);
 
-        if (newChildTasks?.length) {
-          newChildTasksIds = newChildTasks.map((el) => el._id);
-          childTasksIds[parentId] = newChildTasksIds;
-          element.childTasks = newChildTasksIds;
-          element.save();
-        }
-      }
+      const newChildTasksIds = newChildTasks.map((el) => el._id);
+
+      childTasksIds[parentId] = newChildTasksIds;
+
+      element.childTasks = newChildTasksIds;
+      element.save();
     }
 
     return childTasksIds;
