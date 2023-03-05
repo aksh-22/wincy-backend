@@ -11,6 +11,8 @@ import {
   Delete,
   Get,
   Query,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -32,12 +34,12 @@ export class InvoicesController {
 
   //=============================================//
 
-  @Post('bill/:organisation/:project/:paymentPhase')
+  @Post('bill/create-invoice/:organisation/:project')
+  // @Post('bill/create-invoice/:organisation/:project')
   async createInvoice(
     @Request() req,
     @Param('project') projectId: string,
     @Param('organisation') orgId: string,
-    @Param('paymentPhase') paymentPhaseId: string,
     @Body() dto: CreateInvoiceDto,
   ) {
     const { user } = req;
@@ -45,7 +47,6 @@ export class InvoicesController {
       user,
       orgId,
       projectId,
-      paymentPhaseId,
       dto,
     );
   }
@@ -114,12 +115,33 @@ export class InvoicesController {
     @Param('organisation') orgId: string,
     @Query('subsiduary') subsiduaryId: string,
     @Query('financialYear') financialYear: string,
+    @Query('projectId') projectId: string,
+    @Query('month') month: number,
   ) {
     const { user } = req;
     return await this.invoicesService.getInvoices(
       orgId,
       subsiduaryId,
+      projectId,
       financialYear,
+      Number(month),
+      user,
+    );
+  }
+
+  //=============================================//
+
+  @Get('bill/number/:organisation/:subsiduaryId')
+  @Permissions(Permission.GET_INVOICES, Permission.CREATE_INVOICE)
+  async getInvoicesNumber(
+    @Request() req,
+    @Param('organisation') orgId: string,
+    @Param('subsiduaryId') subsiduaryId: string,
+  ) {
+    const { user } = req;
+    return await this.invoicesService.getInvoicesNumber(
+      orgId,
+      subsiduaryId,
       user,
     );
   }
@@ -127,6 +149,7 @@ export class InvoicesController {
   //=============================================//
 
   @Get('single/:organisation/:invoice')
+  @Permissions(Permission.GET_INVOICES, Permission.CREATE_INVOICE)
   async getSingleInvoice(
     @Request() req,
     @Param('organisation') orgId: string,
@@ -135,6 +158,13 @@ export class InvoicesController {
     const { user } = req;
     return await this.invoicesService.getSingleInvoice(orgId, invoiceId, user);
   }
+
+  // @Get('fix-invoice')
+  // @HttpCode(HttpStatus.NOT_ACCEPTABLE)
+  // @Roles(Role.Admin)
+  // async fixAllInvoiceSignals() {
+  //   return await this.invoicesService.fixAllInvoices();
+  // }
 
   //=============================================//
 
@@ -204,18 +234,16 @@ export class InvoicesController {
 
   //=============================================//
 
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @Get('transaction/:organisation/:invoice')
+  @Permissions(Permission.GET_INVOICES, Permission.CREATE_INVOICE)
   async getTransaction(
     @Request() req,
     @Param('organisation') orgId: string,
     @Param('invoice') invoiceId: string,
   ) {
     const { user } = req;
-    return await this.invoicesService.getTransactions(
-      orgId,
-      invoiceId,
-      user._id,
-    );
+    return await this.invoicesService.getTransactions(orgId, invoiceId, user);
   }
 
   //=============================================//

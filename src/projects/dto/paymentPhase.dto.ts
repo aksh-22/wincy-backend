@@ -1,8 +1,16 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { IsArray, IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
-import { isBoolean } from "util";
+import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsArray,
+  IsBoolean,
+  isEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+import { isBoolean } from 'util';
 
-export class CreatePaymentPhaseDto{
+export class CreatePaymentPhaseDto {
   @IsNotEmpty()
   @IsString()
   title: string;
@@ -18,9 +26,13 @@ export class CreatePaymentPhaseDto{
   @IsOptional()
   @IsNumber()
   amount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  restricted?: number;
 }
 
-export class UpdatePaymentPhaseDto{
+export class UpdatePaymentPhaseDto {
   @IsOptional()
   @IsString()
   title?: string;
@@ -36,6 +48,13 @@ export class UpdatePaymentPhaseDto{
   @IsOptional()
   @IsNumber()
   amount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  restricted?: number;
+
+  @IsOptional()
+  status?: string;
 }
 
 export class DeletePaymentPhasesDto {

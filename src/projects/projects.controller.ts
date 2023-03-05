@@ -138,7 +138,7 @@ export class ProjectsController {
     return await this.projectsService.assignProject(
       user,
       dto.team,
-      dto.projectHead,
+      dto.projectManagers,
       orgId,
       projectId,
     );
@@ -402,7 +402,8 @@ export class ProjectsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Post('payment-phase/:organisation/:project')
-  @Roles(Role.Admin)
+  // @Roles(Role.Admin)
+  @Permissions(Permission.GET_INVOICES, Permission.CREATE_INVOICE)
   async createPaymentPhase(
     @Request() req,
     @Param('organisation') orgId: string,
@@ -422,7 +423,8 @@ export class ProjectsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Patch('payment-phase/:organisation/:project/:paymentPhase')
-  @Roles(Role.Admin)
+  // @Roles(Role.Admin)
+  @Permissions(Permission.GET_INVOICES, Permission.CREATE_INVOICE)
   async updatePaymentPhase(
     @Param('paymentPhase') paymentPhaseId: string,
     @Param('project') projectId: string,
@@ -439,7 +441,8 @@ export class ProjectsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Delete('payment-phase/:organisation/:project')
-  @Roles(Role.Admin)
+  // @Roles(Role.Admin)
+  @Permissions(Permission.GET_INVOICES, Permission.CREATE_INVOICE)
   async deletePaymentPhase(
     @Param('project') projectId: string,
     @Param('organisation') orgId: string,
@@ -454,22 +457,41 @@ export class ProjectsController {
 
   //===================================================//
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Get('payment-phase/invoice/:organisation/:paymentPhaseId')
+  // @Roles(Role.Admin)
+  @Permissions(Permission.GET_INVOICES, Permission.CREATE_INVOICE)
+  async showPaymentPhaseLinkedInvoices(
+    @Param('paymentPhaseId') paymentPhaseId: string,
+    @Param('organisation') orgId: string,
+  ) {
+    return await this.projectsService.showPaymentPhaseInvoices(
+      orgId,
+      paymentPhaseId,
+    );
+  }
+
+  //===================================================//
+
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @Get('payment-phase/:organisation/:project')
   // @Roles(Role.Admin)
-  @Permissions(Permission.CREATE_INVOICE)
+  @Permissions(Permission.CREATE_INVOICE, Permission.GET_INVOICES)
   async getPaymentPhase(
     @Param('organisation') orgId: string,
     @Param('project') projectId: string,
+    @Request() req,
   ) {
-    return await this.projectsService.getPaymentPhases(orgId, projectId);
+    const { user } = req;
+    return await this.projectsService.getPaymentPhases(orgId, projectId, user);
   }
 
   //===================================================//
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Patch('payment-phase-milestone/:organisation/:project')
-  @Roles(Role.Admin)
+  // @Roles(Role.Admin)
+  @Permissions(Permission.GET_INVOICES, Permission.CREATE_INVOICE)
   async updatePaymentPhaseMilestone(
     @Param('organisation') orgId: string,
     @Param('project') projectId: string,

@@ -66,6 +66,7 @@ export class UtilsService {
   }
 
   decryptData(encryptedData) {
+    console.log('encryptedData', encryptedData);
     const parsed = JSON.parse(encryptedData);
     const iv = Buffer.from(parsed.iv, 'hex');
     encryptedData = Buffer.from(parsed.encryptedData, 'hex');
@@ -88,7 +89,9 @@ export class UtilsService {
     project.team?.forEach((element) => {
       team.push(String(element));
     });
-    project.projectHead ? team.push(String(project.projectHead)) : undefined;
+    if (project.projectManagers.length) {
+      team.push(...project.projectManagers.map((el) => String(el)));
+    }
 
     return team.includes(userId) ? true : false;
   }
@@ -395,6 +398,7 @@ export class UtilsService {
   }
 
   async decryptAccountData(account) {
+    if (!account) return null;
     account.accountName = account.accountName
       ? this.decryptData(account.accountName)
       : undefined;
@@ -429,13 +433,14 @@ export class UtilsService {
   }
 
   async decryptPaymentPhase(paymentPhase) {
-    paymentPhase.currency = paymentPhase.currency
+    if (!paymentPhase) return;
+    paymentPhase.currency = paymentPhase?.currency
       ? this.decryptData(paymentPhase.currency)
       : undefined;
-    paymentPhase.amount = paymentPhase.amount
+    paymentPhase.amount = paymentPhase?.amount
       ? this.decryptData(paymentPhase.amount)
       : undefined;
-    paymentPhase.dueAmount = paymentPhase.dueAmount
+    paymentPhase.dueAmount = paymentPhase?.dueAmount
       ? this.decryptData(paymentPhase.dueAmount)
       : undefined;
 
@@ -452,7 +457,7 @@ export class UtilsService {
     invoice.basicAmount = invoice.basicAmount
       ? parseFloat(this.decryptData(invoice.basicAmount))
       : invoice.basicAmount;
-    invoice.totalTaxes = invoice.totalTaxes
+    invoice.totalTaxes = invoice?.totalTaxes
       ? parseFloat(this.decryptData(invoice.totalTaxes))
       : invoice.totalTaxes;
     invoice.currency = invoice.currency
@@ -503,5 +508,42 @@ export class UtilsService {
     return invoice;
   }
 
+  compareTwoArrays(array1: any[], array2: any[]) {
+    const arr1 = array1.map((el) => String(el));
+    const arr2 = array2.map((el) => String(el));
+    let found = false;
+    const foundElements = [];
+    const notFoundElements = [];
+    arr1.forEach((el, index) => {
+      const isFound = arr2.includes(el);
+      if (isFound) {
+        if (!found) {
+          found = true;
+        }
+        foundElements.push(el);
+      } else {
+        notFoundElements.push(el);
+      }
+    });
+
+    return { found, foundElements, notFoundElements };
+  }
+
+  isUserProjectManager(managers: any[], user: any) {
+    const projectManagers = managers.map((el) => String(el));
+    return projectManagers.includes(String(user));
+  }
+
+  isUserPermitted(user: any, orgId: any) {
+    let permitted = false;
+    user.userType.forEach((element) => {
+      if (String(element.organisation) == orgId) {
+        if (['Member+', 'Member++', 'Admin'].includes(element.userType)) {
+          permitted = true;
+        }
+      }
+    });
+    return permitted;
+  }
   // x = this.sendNotification({'en': 'Ye aaya kya'}, ['3c7e0894-8260-11ec-b156-fe8c4ace83d9', 'c427a530-825f-11ec-bd71-d20fae2a3316'])
 }

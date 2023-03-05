@@ -11,8 +11,14 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
 @Module({
-  imports: [ SystemModule, UtilsModule, forwardRef(() =>OrganisationsModule),
-    MongooseModule.forFeature([{ name: 'User', schema: UserSchema }, {name: 'PasswordReset', schema: PasswordResetSchema}]),
+  imports: [
+    SystemModule,
+    UtilsModule,
+    forwardRef(() => OrganisationsModule),
+    MongooseModule.forFeature([
+      { name: 'User', schema: UserSchema },
+      { name: 'PasswordReset', schema: PasswordResetSchema },
+    ]),
     JwtModule.register({
       secret: ConfigService.keys.JWT_SECRET,
       signOptions: { expiresIn: '6000s' },
@@ -23,5 +29,4 @@ import { UsersService } from './users.service';
   providers: [UsersService],
   exports: [UsersService],
 })
-
-export class UsersModule { }
+export class UsersModule {}

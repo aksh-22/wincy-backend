@@ -27,29 +27,36 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? 400
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    // console.log(exception instanceof Error)
     let mongoDuplicate;
-    if(exception.code === 11000){
-      if(Object.keys(exception.keyValue) == 'email'){
-        mongoDuplicate = "This email has already been registered!"
-      }
-      else{
-        mongoDuplicate = `Data associated with this ${Object.keys(exception.keyValue)}: '${Object.values(exception.keyValue)}' already exists!`;
+    if (exception.code === 11000) {
+      if (Object.keys(exception.keyValue) == 'email') {
+        mongoDuplicate = 'This email has already been registered!';
+      } else {
+        mongoDuplicate = `Data associated with this ${Object.keys(
+          exception.keyValue,
+        )}: '${Object.values(exception.keyValue)}' already exists!`;
       }
     }
-    
-    console.log(exception);
+
     response.status(status).json({
-      status: "Fail",
+      status: 'Fail',
       statusCode: status,
       timestamp: new Date().toISOString(),
       path: request.url,
-      message: (exception.code == 11000) ? mongoDuplicate
-      :exception.status == 413 && exception.message == 'File too large' ? 'File too large! Max file-size : 10 MegaBytes.'
-      :exception instanceof BadRequestException ? exception.response.message[0]
-      :exception instanceof Error ? exception.reason?.message
-      :exception.response?.message ? exception.response.message
-      :exception.message ? exception.message :"Something Went Wrong"
+      message:
+        exception.code == 11000
+          ? mongoDuplicate
+          : exception.status == 413 && exception.message == 'File too large'
+          ? 'File too large! Max file-size : 10 MegaBytes.'
+          : exception instanceof BadRequestException
+          ? exception.response.message[0]
+          : exception instanceof Error
+          ? exception.reason?.message
+          : exception.response?.message
+          ? exception.response.message
+          : exception.message
+          ? exception.message
+          : 'Something Went Wrong',
     });
   }
 }

@@ -18,10 +18,11 @@ export const PaymentPhaseSchema = new mongoose.Schema(
     milestoneStatus: [{ type: MilestoneStatusSchema, default: undefined }],
     status: {
       type: String,
-      enum: ['Pending', 'Completed', 'Partially Paid'],
+      enum: ['Pending', 'Invoiced', 'Partially Invoiced'],
       default: 'Pending',
     },
     dueAmount: { type: String },
+    restricted: { type: Boolean, required: true, default: false },
   },
   {
     timestamps: true,

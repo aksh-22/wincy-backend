@@ -6,6 +6,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import * as moment from 'moment';
 import { Model } from 'mongoose';
 import { ConfigService } from 'src/config/config.service';
 import { ProjectsService } from 'src/projects/projects.service';
@@ -26,93 +27,109 @@ export class InvoicesService {
     private readonly systemService: SystemService, // private readonly projectsService: ProjectsService,
   ) {}
 
-  async createInvoice(user, orgId, projectId, paymentPhaseId, dto) {
-    dto.paidAmount = this.utilsService.encryptData('0');
-    dto.currency =
-      dto.currency !== undefined
-        ? this.utilsService.encryptData(dto.currency)
-        : undefined;
-    dto.billTo =
-      dto.billTo !== undefined
-        ? this.utilsService.encryptData(dto.billTo)
-        : undefined;
-    dto.raisedOn =
-      dto.raisedOn !== undefined ? new Date(dto.raisedOn) : undefined;
-    dto.dueDate = dto.dueDate !== undefined ? new Date(dto.dueDate) : undefined;
-    // dto.settledOn = dto.settledOn !== undefined ? new Date(dto.settledOn) : undefined;
-    dto.project = projectId;
-    dto.organisation = orgId;
-    dto.createdBy = user._id;
-    dto.totalTaxes = 0;
-    if (dto.taxes && dto.services.length > 0) {
-      for (const ele of dto.taxes) {
-        dto.totalTaxes += parseFloat(ele.taxedAmount);
-        ele.taxName = ele.taxName
-          ? this.utilsService.encryptData(ele.taxName)
-          : this.utilsService.encryptData('Tax');
-        ele.taxedAmount = ele.taxedAmount
-          ? this.utilsService.encryptData(String(ele.taxedAmount))
+  async createInvoice(user, orgId, projectId, dto) {
+    try {
+      dto.paidAmount = this.utilsService.encryptData('0');
+      dto.currency =
+        dto.currency !== undefined
+          ? this.utilsService.encryptData(dto.currency)
+          : undefined;
+      dto.billTo =
+        dto.billTo !== undefined
+          ? this.utilsService.encryptData(dto.billTo)
+          : undefined;
+      dto.raisedOn =
+        dto.raisedOn !== undefined ? new Date(dto.raisedOn) : undefined;
+      dto.dueDate =
+        dto.dueDate !== undefined ? new Date(dto.dueDate) : undefined;
+      // dto.settledOn = dto.settledOn !== undefined ? new Date(dto.settledOn) : undefined;
+      dto.project = projectId;
+      dto.organisation = orgId;
+      dto.createdBy = user._id;
+      dto.totalTaxes = 0;
+      if (dto.taxes && dto.services.length > 0) {
+        for (const ele of dto.taxes) {
+          dto.totalTaxes += parseFloat(ele.taxedAmount);
+          ele.taxName = ele.taxName
+            ? this.utilsService.encryptData(ele.taxName)
+            : this.utilsService.encryptData('Tax');
+          ele.taxedAmount = ele.taxedAmount
+            ? this.utilsService.encryptData(String(ele.taxedAmount))
+            : this.utilsService.encryptData('0');
+        }
+      }
+      dto.totalTaxes = this.utilsService.encryptData(String(dto.totalTaxes));
+      dto.basicAmount = 0;
+      dto.paymentPhaseIds = [];
+      if (dto.services && dto.services.length > 0) {
+        for (const ele of dto.services) {
+          // ele.amount = parseFloat(ele.quantity) * parseFloat(ele.rate);
+          dto.basicAmount += parseFloat(ele.amount);
+          // ele.rate = this.utilsService.encryptData(String(ele.rate));
+          // ele.quantity = this.utilsService.encryptData(String(ele.quantity));
+          ele.amount = this.utilsService.encryptData(String(ele.amount));
+          dto.paymentPhaseIds.push(ele.paymentPhaseId);
+          // ele.description = this.utilsService.encryptData(ele.description);
+        }
+      }
+      dto.basicAmount = this.utilsService.encryptData(String(dto.basicAmount));
+
+      dto.discountName =
+        dto.discountName !== undefined
+          ? this.utilsService.encryptData(dto.discountName)
+          : this.utilsService.encryptData('Discount');
+      dto.discountedAmount =
+        dto.discountedAmount !== undefined
+          ? this.utilsService.encryptData(String(dto.discountedAmount))
           : this.utilsService.encryptData('0');
-      }
+      dto.discount = {
+        discountName: dto.discountName,
+        discountedAmount: dto.discountedAmount,
+      };
+
+      dto.finalAmount =
+        parseFloat(this.utilsService.decryptData(dto.basicAmount)) +
+        parseFloat(this.utilsService.decryptData(dto.totalTaxes)) -
+        parseFloat(
+          this.utilsService.decryptData(dto.discount.discountedAmount),
+        );
+      dto.finalAmount = this.utilsService.encryptData(String(dto.finalAmount));
+      dto.noteForClient =
+        dto.noteForClient !== undefined
+          ? this.utilsService.encryptData(dto.noteForClient)
+          : undefined;
+      dto.paymentTerms =
+        dto.paymentTerms !== undefined
+          ? this.utilsService.encryptData(dto.paymentTerms)
+          : undefined;
+      // const [x, y, yearArr, numArr] = dto.sNo.split('/');
+      // const serialSequence = parseInt(
+      //   `${yearArr.split('-').join('')}${numArr}`,
+      // );
+      // dto.serialSequence = serialSequence;
+
+      const serialSequence = dto.sNo.split('/');
+      dto.serialSequence = parseInt(serialSequence[serialSequence.length - 1]);
+
+      let invoice = new this.invoiceModel(dto);
+
+      invoice = await invoice.save();
+
+      // Updating the payment phase
+      await this.projectsService.updatePaymentPhaseDueAmount(dto.services);
+
+      invoice = await this.utilsService.decryptInvoiceData(invoice);
+
+      // this.clearRaisedInvoice(projectId, paymentPhaseId);
+
+      return {
+        data: { invoice },
+        success: true,
+        message: 'Invoice created successfully.',
+      };
+    } catch (error) {
+      console.error('Error in : createInvoice', error);
     }
-    dto.totalTaxes = this.utilsService.encryptData(String(dto.totalTaxes));
-    dto.basicAmount = 0;
-    dto.paymentPhaseIds = [];
-    if (dto.services && dto.services.length > 0) {
-      for (const ele of dto.services) {
-        // ele.amount = parseFloat(ele.quantity) * parseFloat(ele.rate);
-        dto.basicAmount += parseFloat(ele.amount);
-        // ele.rate = this.utilsService.encryptData(String(ele.rate));
-        // ele.quantity = this.utilsService.encryptData(String(ele.quantity));
-        ele.amount = this.utilsService.encryptData(String(ele.amount));
-        dto.paymentPhaseIds.push(ele.paymentPhaseId);
-        // ele.description = this.utilsService.encryptData(ele.description);
-      }
-    }
-    dto.basicAmount = this.utilsService.encryptData(String(dto.basicAmount));
-
-    dto.discountName =
-      dto.discountName !== undefined
-        ? this.utilsService.encryptData(dto.discountName)
-        : this.utilsService.encryptData('Discount');
-    dto.discountedAmount =
-      dto.discountedAmount !== undefined
-        ? this.utilsService.encryptData(String(dto.discountedAmount))
-        : this.utilsService.encryptData('0');
-    dto.discount = {
-      discountName: dto.discountName,
-      discountedAmount: dto.discountedAmount,
-    };
-
-    dto.finalAmount =
-      parseFloat(this.utilsService.decryptData(dto.basicAmount)) +
-      parseFloat(this.utilsService.decryptData(dto.totalTaxes)) -
-      parseFloat(this.utilsService.decryptData(dto.discount.discountedAmount));
-    dto.finalAmount = this.utilsService.encryptData(String(dto.finalAmount));
-    dto.noteForClient =
-      dto.noteForClient !== undefined
-        ? this.utilsService.encryptData(dto.noteForClient)
-        : undefined;
-    dto.paymentTerms =
-      dto.paymentTerms !== undefined
-        ? this.utilsService.encryptData(dto.paymentTerms)
-        : undefined;
-    const serialSequence = dto.sNo.split('/');
-    dto.serialSequence = parseInt(serialSequence[serialSequence.length - 1]);
-    let invoice = new this.invoiceModel(dto);
-
-    await this.projectsService.updatePaymentPhaseDueAmount(dto.services);
-
-    invoice = await invoice.save();
-
-    invoice = await this.utilsService.decryptInvoiceData(invoice);
-    // this.clearRaisedInvoice(projectId, paymentPhaseId);
-
-    return {
-      data: { dto },
-      success: true,
-      message: 'Invoice created successfully.',
-    };
   }
 
   async updateInvoice(user, orgId, projectId, invoiceId, dto) {
@@ -145,13 +162,17 @@ export class InvoicesService {
 
     if (dto.services && dto.services.length > 0) {
       dto.basicAmount = 0;
+      dto.paymentPhaseIds = [];
       for (const ele of dto.services) {
-        ele.amount = ele.quantity * ele.rate;
-        dto.basicAmount += ele.amount;
-        ele.rate = this.utilsService.encryptData(String(ele.rate));
-        ele.quantity = this.utilsService.encryptData(String(ele.quantity));
+        // ele.amount = ele.quantity * ele.rate;
+        // dto.basicAmount += ele.amount;
+        dto.basicAmount += parseFloat(ele.amount);
+        // ele.rate = this.utilsService.encryptData(String(ele.rate));
+        // ele.quantity = this.utilsService.encryptData(String(ele.quantity));
+        // ele.amount = this.utilsService.encryptData(String(ele.amount));
+        // ele.description = this.utilsService.encryptData(ele.description);
         ele.amount = this.utilsService.encryptData(String(ele.amount));
-        ele.description = this.utilsService.encryptData(ele.description);
+        dto.paymentPhaseIds.push(ele.paymentPhaseId);
       }
       invoice.services = dto.services;
       invoice.basicAmount =
@@ -192,10 +213,10 @@ export class InvoicesService {
 
     invoice.sNo = dto.sNo !== undefined ? dto.sNo : invoice.sNo;
     invoice.status = dto.status !== undefined ? dto.status : invoice.status;
-    invoice.paymentPhase =
-      dto.paymentPhaseId !== undefined
-        ? dto.paymentPhaseId
-        : invoice.paymentPhase;
+    // invoice.paymentPhase =
+    //   dto.paymentPhaseId !== undefined
+    //     ? dto.paymentPhaseId
+    //     : invoice.paymentPhase;
     // invoice.paidAmount = dto.paidAmount !== undefined ? this.utilsService.encryptData(String(dto.paidAmount)) : invoice.paidAmount;
     invoice.currency =
       dto.currency !== undefined
@@ -223,6 +244,8 @@ export class InvoicesService {
 
     invoice = await invoice.save({ new: true });
 
+    await this.projectsService.updatePaymentPhaseDueAmount(dto.services);
+
     invoice = await this.utilsService.decryptInvoiceData(invoice);
 
     return {
@@ -233,8 +256,16 @@ export class InvoicesService {
   }
 
   async deleteInvoice(user, orgId, projectId, invoiceId) {
+    const invoice = await this.invoiceModel.findById(invoiceId);
+    // .populate('services.paymentPhaseId');
+
+    // await this.projectsService.updatePaymentPhaseDueAmount(
+    //   invoice.services,
+    //   'ADD',
+    // );
+
     await this.transactionModel.find({ invoice: invoiceId }).exec();
-    // console.log('a', JSON.stringify(a, null, 2));
+    //----------
     // const transactions = await this.getTransactionsApp(
     //   { invoice: invoiceId, project: projectId },
     //   {},
@@ -246,6 +277,7 @@ export class InvoicesService {
     //     HttpStatus.BAD_REQUEST,
     //   );
     // }
+    //-------------
 
     await this.deleteInvoiceTransaction(projectId, invoiceId);
 
@@ -302,14 +334,60 @@ export class InvoicesService {
     return data;
   }
 
-  async getInvoices(orgId, subsiduaryId, financialYear, user) {
-    let filter = { organisation: orgId };
+  async getAllInvoices(args: any, projection?: any, populate?: any) {
+    return await this.invoiceModel.find(args, projection).populate(populate);
+  }
+
+  async getInvoicesNumber(orgId: string, subsiduaryId: string, user: any) {
+    let query = {
+      organisation: orgId,
+      subsiduary: subsiduaryId,
+    };
+    const invoices = await this.invoiceModel.distinct('sNo', query);
+    return invoices;
+  }
+
+  async getInvoices(
+    orgId,
+    subsiduaryId,
+    projectId,
+    financialYear,
+    month,
+    user,
+  ) {
+    let filter: any = {
+      organisation: orgId,
+    };
+
     if (subsiduaryId) {
       filter['subsiduary'] = subsiduaryId;
+    }
+    if (projectId) {
+      filter['project'] = projectId;
     }
     if (financialYear) {
       filter['sNo'] = { $regex: '/' + financialYear + '/' };
     }
+    if (month >= 0) {
+      if (!financialYear) {
+        filter = { ...filter, $expr: { $eq: [{ $month: '$createdAt' }, 2] } };
+      } else {
+        const [i, f] = financialYear.split('-');
+
+        let selectedYear = Number(
+          String(new Date().getFullYear()).substring(0, 2) +
+            (month < 4 ? f : i),
+        );
+
+        var startDate = moment([selectedYear, month]).toDate();
+        const endDate = moment({ month, year: selectedYear })
+          .endOf('month')
+          .toDate();
+
+        filter['createdAt'] = { $gt: startDate, $lte: endDate };
+      }
+    }
+
     let invoices = await this.invoiceModel
       .find(filter)
       .sort({ serialSequence: 1 })
@@ -323,7 +401,10 @@ export class InvoicesService {
         status: 1,
         raisedOn: 1,
         createdBy: 1,
+        project: 1,
+        serialSequence: 1,
       })
+      .populate('project')
       .exec();
     const updatedInvoices = [];
 
@@ -349,9 +430,47 @@ export class InvoicesService {
     return { data: { invoices: updatedInvoices }, success: true, message: '' };
   }
 
+  // async fixAllInvoices() {
+  //   const invoices = await this.invoiceModel.find();
+  //   for (let index = 0; index < invoices.length; index++) {
+  //     const el = invoices[index];
+  //     if (!el.services[0].paymentPhaseId && el.paymentPhase[0]) {
+  //       console.log('el.paymentPhase', el.services);
+  //       for (let index = 0; index < el.services.length; index++) {
+  //         let elementService = el.services[index];
+
+  //         elementService = {
+  //           ...elementService._doc,
+  //           paymentPhaseId: el.paymentPhase[0],
+  //         };
+  //         el.services[index] = elementService;
+  //       }
+  //       invoices[index] = el;
+  //       console.log('services', el.services);
+  //       await el.save();
+  //     }
+  //   }
+
+  //   return { message: 'Already modified' };
+  // }
+
   async getSingleInvoice(orgId, invoiceId, user) {
+    let query = {};
+
+    if (user.type === 'Admin') {
+      query = {
+        organisation: orgId,
+        _id: invoiceId,
+      };
+    } else {
+      query = {
+        organisation: orgId,
+        _id: invoiceId,
+        createdBy: user._id,
+      };
+    }
     let invoice = await this.invoiceModel
-      .findOne({ organisation: orgId, _id: invoiceId })
+      .findOne(query)
       .populate('project')
       .populate('services.paymentPhaseId')
       .populate('customer')
@@ -371,6 +490,14 @@ export class InvoicesService {
         'paymentPhase.milestones.paymentInfo': 0,
       })
       .exec();
+
+    if (!invoice) {
+      throw new HttpException(
+        'Either you are not authorized or invoice is not found.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     // let invoice = await this.invoiceModel.aggregate([
     //   {
     //     $match: {organisation: Types.ObjectId(orgId), _id: Types.ObjectId(invoiceId)}
@@ -410,21 +537,18 @@ export class InvoicesService {
     // ])
 
     const decryptedServices = [];
-    console.log('invoice', invoice.paymentPhase);
 
-    if (invoice.paymentPhase) {
-      invoice.paymentPhase = await this.utilsService.decryptPaymentPhase(
-        invoice.paymentPhase,
-      );
-    } else {
+    if (invoice?.services[0]?.paymentPhaseId) {
       for (const el of invoice.services) {
         const a = await this.utilsService.decryptPaymentPhase(
           el.paymentPhaseId,
         );
-        console.log('a', a);
         decryptedServices.push(a);
       }
-      console.log('decryptedServices', decryptedServices);
+    } else if (invoice.paymentPhase) {
+      invoice.paymentPhase = await this.utilsService.decryptPaymentPhase(
+        invoice.paymentPhase,
+      );
     }
 
     invoice.customer = await this.utilsService.decryptCustomerData(
@@ -734,11 +858,13 @@ export class InvoicesService {
     return transaction;
   }
 
-  async getTransactions(orgId, invoiceId, userId) {
+  async getTransactions(orgId, invoiceId, user) {
+    const userId = user._id;
     const transactions = await this.getTransactionsApp(
       orgId,
       invoiceId,
       userId,
+      user.type,
     );
     for (let ele of transactions) {
       // 61543116d8aa0b00169fbfc4
@@ -749,10 +875,19 @@ export class InvoicesService {
     return { data: { transactions }, success: true, message: '' };
   }
 
-  async getTransactionsApp(orgId, invoiceId, userId) {
-    const transaction = await this.transactionModel
-      .find({ invoice: invoiceId, createdBy: userId })
-      .exec();
+  async getTransactionsApp(orgId, invoiceId, userId, userType) {
+    let query;
+    if (userType === 'Admin') {
+      query = {
+        invoice: invoiceId,
+      };
+    } else {
+      query = {
+        invoice: invoiceId,
+        createdBy: userId,
+      };
+    }
+    const transaction = await this.transactionModel.find(query).exec();
     return transaction;
   }
 }

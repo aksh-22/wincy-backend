@@ -395,7 +395,7 @@ export class OrganisationsService {
 
     for (let i = 0; i < users.length; i++) {
       users[i]._doc.projects = await this.projectsService.getMultiProjectsApp(
-        { $or: [{ team: users[i]._id }, { projectHead: users[i]._id }] },
+        { $or: [{ team: users[i]._id }, { projectManagers: users[i]._id }] },
         { title: 1, logo: 1, platforms: 1 },
       );
     }

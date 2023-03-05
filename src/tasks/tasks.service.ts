@@ -56,13 +56,17 @@ export class TasksService {
       { _id: projectId },
       {},
     );
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
     if (
       user.type == 'Member+' &&
-      project.projectHead &&
-      String(project.projectHead) != String(user._id)
+      project.projectManagers.length &&
+      !isProjectManager
     ) {
       throw new HttpException(
-        'User is not authorised to perform this task.',
+        'User is not authorized to perform this task.',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -108,7 +112,7 @@ export class TasksService {
       project: project._id,
       milestone: milestone._id,
       accessLevel: 'Member',
-      users: [...project.team, project.projectHead],
+      users: [...project.team, ...project.projectManagers],
       meta: {
         projectName: project.title,
         milestoneTitle: milestone.title,
@@ -142,13 +146,17 @@ export class TasksService {
       { _id: projectId },
       {},
     );
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
     if (
       user.type == 'Member+' &&
-      project.projectHead &&
-      String(project.projectHead) != String(user._id)
+      project.projectManagers.length &&
+      !isProjectManager
     ) {
       throw new HttpException(
-        'User is not authorised to perform this task.',
+        'User is not authorized to perform this task.',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -537,10 +545,15 @@ export class TasksService {
       );
     }
 
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+
     if (!['Member++', 'Admin'].includes(user.type)) {
-      if (String(user._id) != String(project.projectHead)) {
+      if (!isProjectManager) {
         throw new HttpException(
-          'User is not authorised to perform this task',
+          'User is not authorized to perform this task',
           HttpStatus.BAD_REQUEST,
         );
       }
@@ -600,12 +613,14 @@ export class TasksService {
       );
     }
 
-    if (
-      String(admin.type) == 'Member+' &&
-      String(project.projectHead) != String(admin._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      admin._id,
+    );
+
+    if (String(admin.type) == 'Member+' && !isProjectManager) {
       throw new HttpException(
-        'User not authorised to perform this task!',
+        'User not authorized to perform this task!',
         HttpStatus.FORBIDDEN,
       );
     }
@@ -623,7 +638,10 @@ export class TasksService {
     project.team?.forEach((element) => {
       team.push(String(element._id));
     });
-    project.projectHead ? team.push(String(project.projectHead)) : undefined;
+
+    if (project.projectManagers.length) {
+      team.push(...project.projectManagers.map((el) => String(el)));
+    }
 
     let assignees = [];
     const assigneesStatus = [];
@@ -735,12 +753,18 @@ export class TasksService {
         }
       }
     }
-    project.projectHead ? team.push(String(project.projectHead)) : undefined;
+    if (project.projectManagers.length) {
+      team.push(...project.projectManagers.map((el) => String(el)));
+    }
 
     if (!['Member++', 'Admin'].includes(admin.type)) {
-      if (String(project.projectHead) != String(admin._id) && !isUserInTeam) {
+      const isProjectManager = this.utilsService.isUserProjectManager(
+        project.projectManagers,
+        admin._id,
+      );
+      if (!isProjectManager && !isUserInTeam) {
         throw new HttpException(
-          'User not authorised to perform this task!',
+          'User not authorized to perform this task!',
           HttpStatus.FORBIDDEN,
         );
       }
@@ -754,9 +778,6 @@ export class TasksService {
       }
     }
 
-    // if(String(project.projectHead) != String(admin._id) && ! ["Member++", "Admin"].includes(admin.type)){
-    //   dto.status = undefined;
-    // }
     let updateStatus;
     if (dto.myStatus || dto.status) {
       updateStatus = await this.updateTaskStatus(
@@ -771,10 +792,12 @@ export class TasksService {
     task.onHoldReason =
       dto.onHoldReason !== undefined ? dto.onHoldReason : task.onHoldReason;
 
-    if (
-      String(project.projectHead) == String(admin._id) ||
-      ['Member++', 'Admin'].includes(admin.type)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      admin._id,
+    );
+
+    if (isProjectManager || ['Member++', 'Admin'].includes(admin.type)) {
       if (dto.platforms) {
         task.platforms = dto.platforms.filter((element) =>
           project.platforms.includes(element),
@@ -994,7 +1017,9 @@ export class TasksService {
     project.team?.forEach((element) => {
       team.push(String(element._id));
     });
-    project.projectHead ? team.push(String(project.projectHead)) : undefined;
+    if (project.projectManagers.length) {
+      team.push(...project.projectManagers.map((el) => String(el)));
+    }
 
     const isUserInTeam = team.includes(String(admin._id));
     if (admin.type == 'Member' || admin.type == 'Member+') {
@@ -1013,6 +1038,8 @@ export class TasksService {
     // }
 
     task.description = dto.description;
+
+    task.descriptionUpdatedAt = new Date();
 
     task = await task.save({ new: true });
 
@@ -1524,9 +1551,14 @@ export class TasksService {
       //   throw new HttpException("User is not associated with this project!", HttpStatus.BAD_REQUEST);
       // }
 
-      if (String(user._id) != String(project.projectHead)) {
+      const isProjectManager = this.utilsService.isUserProjectManager(
+        project.projectManagers,
+        user._id,
+      );
+
+      if (!isProjectManager) {
         throw new HttpException(
-          'User is not authorised to perform this task',
+          'User is not authorized to perform this task',
           HttpStatus.BAD_REQUEST,
         );
       }
@@ -1653,12 +1685,14 @@ export class TasksService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    if (
-      !['Admin', 'Member++'].includes(user.type) &&
-      String(project.projectHead) != String(user._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+
+    if (!['Admin', 'Member++'].includes(user.type) && !isProjectManager) {
       throw new HttpException(
-        'You are not authorised to perform this task!',
+        'You are not authorized to perform this task!',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -1667,11 +1701,9 @@ export class TasksService {
       .find({ _id: { $in: tasks }, project: projectId })
       .exec();
 
-    console.log('tasksDetailed', tasksDetailed);
     let parentTaskIds = {};
 
     tasksDetailed.forEach((el) => {
-      console.log('el.parent', el.parent);
       if (el.parent) {
         if (parentTaskIds[el.parent]) {
           parentTaskIds[el.parent].push(String(el._id));
@@ -1684,13 +1716,9 @@ export class TasksService {
       // }
     });
 
-    console.log('parentTaskIds', parentTaskIds);
-
     const parentTasks = await this.taskModel.find({
       _id: Object.keys(parentTaskIds),
     });
-
-    console.log('parentTasks', parentTasks);
 
     for (let index = 0; index < parentTasks.length; index++) {
       const element = parentTasks[index];
@@ -1769,10 +1797,15 @@ export class TasksService {
       );
     }
 
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+
     if (
       user.type == 'Member+' &&
-      project.projectHead &&
-      String(project.projectHead) != String(user._id)
+      project.projectManagers.length &&
+      !isProjectManager
     ) {
       throw new HttpException(
         'User is not authorised to perform this task.',
@@ -1863,9 +1896,14 @@ export class TasksService {
       team.push(String(element));
     });
 
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+
     if (
       !['Admin', 'Member++'].includes(user.type) &&
-      String(user._id) != String(project.projectHead) &&
+      !isProjectManager &&
       !team.includes(dto.assignee)
     ) {
       throw new HttpException(
@@ -1922,7 +1960,7 @@ export class TasksService {
 
   //   if (
   //     // !['Admin', 'Member++'].includes(user.type) &&
-  //     // String(user._id) != String(project.projectHead) &&
+  //     // String(user._id) != String(project.projectHeead) &&
   //     !team.includes(dto.assignee)
   //   ) {
   //     throw new HttpException(
@@ -1977,7 +2015,7 @@ export class TasksService {
   //   project.team.forEach((element) => {
   //     team.push(String(element));
   //   });
-  //   !project.projectHead || team.push(String(project.projectHead));
+  //   !project.projectHeead || team.push(String(project.projectHeead));
 
   //   if (
   //     !['Admin', 'Member++'].includes(user.type) &&
@@ -2107,7 +2145,9 @@ export class TasksService {
     project.team.forEach((element) => {
       team.push(String(element));
     });
-    !project.projectHead || team.push(String(project.projectHead));
+    if (project.projectManagers.length) {
+      team.push(...project.projectManagers.map((el) => String(el)));
+    }
 
     if (
       !['Admin', 'Member++'].includes(user.type) &&
@@ -2282,7 +2322,12 @@ export class TasksService {
       );
     }
 
-    if (user.type == 'Member+' && project.projectHead != String(user._id)) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+
+    if (user.type == 'Member+' && !isProjectManager) {
       throw new HttpException(
         'You are not authorised to perform this task!',
         HttpStatus.BAD_REQUEST,
@@ -2330,10 +2375,12 @@ export class TasksService {
       );
     }
 
-    if (
-      user.type == 'Member+' &&
-      String(project.projectHead) != String(user._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+
+    if (user.type == 'Member+' && !isProjectManager) {
       throw new HttpException(
         'User is not authorised to perform this task!',
         HttpStatus.BAD_REQUEST,
@@ -2413,7 +2460,11 @@ export class TasksService {
     }
 
     if (!['Member++', 'Admin'].includes(user.type)) {
-      if (String(user._id) != String(project.projectHead)) {
+      const isProjectManager = this.utilsService.isUserProjectManager(
+        project.projectManagers,
+        user._id,
+      );
+      if (!isProjectManager) {
         throw new HttpException(
           'User is not authorised to perform this task',
           HttpStatus.BAD_REQUEST,
@@ -2473,7 +2524,11 @@ export class TasksService {
     }
 
     if (!['Admin', 'Member++'].includes(user.type)) {
-      if (String(project.projectHead) != String(user._id)) {
+      const isProjectManager = this.utilsService.isUserProjectManager(
+        project.projectManagers,
+        user._id,
+      );
+      if (!isProjectManager) {
         throw new HttpException(
           'You are not authorised to perform this task!',
           HttpStatus.BAD_REQUEST,
@@ -2585,7 +2640,11 @@ export class TasksService {
     }
 
     if (!['Admin', 'Member++'].includes(user.type)) {
-      if (String(project.projectHead) != String(user._id)) {
+      const isProjectManager = this.utilsService.isUserProjectManager(
+        project.projectManagers,
+        user._id,
+      );
+      if (!isProjectManager) {
         throw new HttpException(
           'You are not authorised to perform this task!',
           HttpStatus.BAD_REQUEST,
@@ -2864,10 +2923,11 @@ export class TasksService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    if (
-      user.type == 'Member+' &&
-      String(project.projectHead) != String(user._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+    if (user.type == 'Member+' && !isProjectManager) {
       throw new HttpException(
         'User is not authorised to perform this task!',
         HttpStatus.BAD_REQUEST,
@@ -2981,7 +3041,11 @@ export class TasksService {
       );
     }
     if (!['Member++', 'Admin'].includes(user.type)) {
-      if (String(project.projectHead) != String(user._id)) {
+      const isProjectManager = this.utilsService.isUserProjectManager(
+        project.projectManagers,
+        user._id,
+      );
+      if (!isProjectManager) {
         throw new HttpException(
           'User not authorised to perform this task!',
           HttpStatus.FORBIDDEN,

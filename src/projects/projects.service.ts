@@ -19,6 +19,10 @@ import { ActivitiesService } from 'src/activities/activities.service';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { InvoicesService } from 'src/invoices/invoices.service';
 import { Project_Type } from './enum/project.enum';
+import {
+  CreatePaymentPhaseDto,
+  UpdatePaymentPhaseDto,
+} from './dto/paymentPhase.dto';
 const activityType = 'Project';
 
 @Injectable()
@@ -125,13 +129,17 @@ export class ProjectsService {
         HttpStatus.BAD_REQUEST,
       );
     }
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
     if (
       user.type == 'Member+' &&
-      project.projectHead &&
-      String(project.projectHead) != String(user._id)
+      project.projectManagers.length &&
+      !isProjectManager
     ) {
       throw new HttpException(
-        'User is not authorised to perform this task!',
+        'User is not authorized to perform this task!',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -243,7 +251,7 @@ export class ProjectsService {
     project = await project.save({ new: true });
     project = await project
       .populate('team')
-      .populate('projectHead')
+      .populate('projectManagers')
       .execPopulate();
     project = await this.decryptProjectData(project);
 
@@ -273,7 +281,10 @@ export class ProjectsService {
       {
         $and: [
           {
-            $or: [{ _id: project.projectHead }, { _id: { $in: project.team } }],
+            $or: [
+              { _id: project.projectManagers },
+              { _id: { $in: project.team } },
+            ],
           },
           { 'projects.organisation': orgId },
         ],
@@ -311,7 +322,7 @@ export class ProjectsService {
       .select('+clientData')
       .select('+createdBy')
       .populate('team', ['name', 'profilePicture'])
-      .populate('projectHead', ['name', 'profilePicture'])
+      .populate('projectManagers', ['name', 'profilePicture'])
       .populate('createdBy', ['name', 'profilePicture'])
       .populate('lastUpdatedBy', ['name', 'profilePicture'])
       .exec();
@@ -325,7 +336,7 @@ export class ProjectsService {
       project = await this.projectModel
         .findOne({ _id: projectId, organisation: orgId })
         .populate('team', ['name', 'profilePicture'])
-        .populate('projectHead', ['name', 'profilePicture'])
+        .populate('projectManagers', ['name', 'profilePicture'])
         .populate('createdBy', ['name', 'profilePicture'])
         .populate('lastUpdatedBy', ['name', 'profilePicture'])
         .select([
@@ -340,7 +351,7 @@ export class ProjectsService {
       project = await this.projectModel
         .findOne({ _id: projectId })
         .populate('team', ['name', 'profilePicture'])
-        .populate('projectHead', ['name', 'profilePicture'])
+        .populate('projectManagers', ['name', 'profilePicture'])
         .select(['+credentials'])
         .lean();
 
@@ -348,13 +359,14 @@ export class ProjectsService {
       project.team?.forEach((element) => {
         team.push(String(element._id));
       });
-      project.projectHead
-        ? team.push(String(project.projectHead._id))
-        : undefined;
+      const projectManagers = project.projectManagers?.map((el) =>
+        String(el._id),
+      );
+      if (projectManagers?.length) team.push(...projectManagers);
 
       if (!team.includes(String(user._id)) && user.type != 'Member++') {
         throw new HttpException(
-          'You are not authorised to perform this task',
+          'You are not authorized to perform this task',
           HttpStatus.BAD_REQUEST,
         );
       }
@@ -392,10 +404,11 @@ export class ProjectsService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    if (
-      user.type == 'Member+' &&
-      String(project.projectHead) != String(user._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+    if (user.type == 'Member+' && !isProjectManager) {
       throw new HttpException(
         'You are not authorised Perform this task!!',
         HttpStatus.BAD_REQUEST,
@@ -478,10 +491,12 @@ export class ProjectsService {
       );
     }
 
-    if (
-      user.type == 'Member+' &&
-      String(project.projectHead) != String(user._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+
+    if (user.type == 'Member+' && !isProjectManager) {
       throw new HttpException(
         'You are not authorised Perform this task!!',
         HttpStatus.BAD_REQUEST,
@@ -585,10 +600,12 @@ export class ProjectsService {
       );
     }
 
-    if (
-      user.type == 'Member+' &&
-      String(project.projectHead) != String(user._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+
+    if (user.type == 'Member+' && !isProjectManager) {
       throw new HttpException(
         'You are not authorised Perform this task!!',
         HttpStatus.BAD_REQUEST,
@@ -763,10 +780,22 @@ export class ProjectsService {
       'startedAt',
       'dueDate',
       'team',
-      'projectHead',
+      'projectManagers',
       'technologies',
       'projectType',
     ];
+    let typeOfProject = [
+      Project_Type.DEVELOPMENT,
+      Project_Type.MARKETING,
+      undefined,
+    ];
+    if (projectType) {
+      if ([Project_Type.DEVELOPMENT, undefined].includes(projectType)) {
+        typeOfProject = [undefined, Project_Type.DEVELOPMENT];
+      } else {
+        typeOfProject = [projectType];
+      }
+    }
     const projections = {};
     const projectList = [];
     let users = [];
@@ -781,13 +810,12 @@ export class ProjectsService {
             organisation: orgId,
             status,
             projectType: {
-              $in: [Project_Type.DEVELOPMENT, undefined].includes(projectType)
-                ? [undefined, Project_Type.DEVELOPMENT]
-                : [projectType],
+              $in: typeOfProject,
             },
           },
           projections,
         )
+        .select(['+paymentInfo'])
         .sort({ _id: -1 });
     } else {
       projects = await this.projectModel
@@ -796,14 +824,12 @@ export class ProjectsService {
             organisation: orgId,
             status,
             projectType: {
-              $in: [Project_Type.DEVELOPMENT, undefined].includes(projectType)
-                ? [undefined, Project_Type.DEVELOPMENT]
-                : [projectType],
+              $in: typeOfProject,
             },
             // projectType === Project_Type.DEVELOPMENT
             //   ? { $in: [undefined, projectType] }
             //   : projectType,
-            $or: [{ team: user._id }, { projectHead: user._id }],
+            $or: [{ team: user._id }, { projectManagers: user._id }],
           },
           projections,
         )
@@ -814,8 +840,8 @@ export class ProjectsService {
       if (element.team.length > 0) {
         users.push(...element.team);
       }
-      if (element.projectHead) {
-        users.push(element.projectHead);
+      if (element.projectManagers.length) {
+        users.push(...element.projectManagers);
       }
       projectList.push(element._id);
     });
@@ -832,28 +858,45 @@ export class ProjectsService {
     for (let i = 0; i < projects.length; i++) {
       let teamFull = [];
       let team = [];
+      let projectManagersFull = [];
+      let projectManagers = [];
+
       if (projects[i].team.length > 0) {
         projects[i].team.forEach((element1) => {
           team.push(String(element1));
         });
       }
+
+      if (projects[i].projectManagers.length > 0) {
+        projects[i].projectManagers.forEach((element1) => {
+          projectManagers.push(String(element1));
+        });
+      }
+
       const { todosCount, tasksCount } = await this.tasksService.getTasksCount(
         projects[i]._id,
       );
 
-      users.forEach((element1) => {
+      users.forEach((element1, index) => {
         if (team.includes(String(element1._id))) {
           teamFull.push(element1);
-        } else if (String(projects[i].projectHead) == String(element1._id)) {
-          projects[i].projectHead = element1;
+        } else if (projectManagers.includes(String(element1._id))) {
+          projectManagersFull.push(element1);
         }
       });
       let a = todosCount;
       let b = tasksCount;
       projects[i].team = teamFull;
+      projects[i].projectManagers = projectManagersFull;
       projects[i]._doc.todosCount = a;
       projects[i]._doc.tasksCount = b;
       projects[i]._doc.milestoneCount = {};
+      if (!!projects[i]._doc.paymentInfo?.currency) {
+        const curr = this.utilsService.decryptData(
+          projects[i]._doc.paymentInfo?.currency,
+        );
+        projects[i]._doc.paymentInfo.currency = curr;
+      }
       projects[i]._doc.milestoneCount = count[String(projects[i]._id)];
     }
 
@@ -864,11 +907,11 @@ export class ProjectsService {
 
   async getUsersProjectSelection(user, orgId, projectId) {
     const project = await this.projectModel.findOne({ _id: projectId });
-    if (
-      project &&
-      user.type == 'Member+' &&
-      String(project.projectHead) != String(user._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      user._id,
+    );
+    if (project && user.type == 'Member+' && !isProjectManager) {
       throw new HttpException(
         "Either you are not authorised to perform this task or given data don't match up",
         HttpStatus.FORBIDDEN,
@@ -905,7 +948,7 @@ export class ProjectsService {
     this.bugsService.deleteBugsApp({ project: projectId });
     this.tasksService.deleteTasksApp({ project: projectId });
     this.tasksService.deleteMilestonesApp({ project: projectId });
-    let remove = [project.projectHead, ...(project.team || [])];
+    let remove = [...project.projectManagers, ...(project.team || [])];
     remove = remove.filter(Boolean);
 
     await this.usersService.updateUsers(
@@ -948,7 +991,7 @@ export class ProjectsService {
     } else {
       filter = {
         organisation: orgId,
-        $or: [{ team: user._id }, { projectHead: user._id }],
+        $or: [{ team: user._id }, { projectManagers: user._id }],
       };
     }
     const projects = await this.projectModel
@@ -976,274 +1019,230 @@ export class ProjectsService {
   }
   //==================================================//
 
-  async assignProject(user, team, projectHead, orgId, projectId) {
-    //1. make sure project is associated with given organisation
-    let project = await this.getAppProject({ _id: projectId }, {});
-    if (!project || String(project.organisation) != orgId) {
-      throw new HttpException('Invalid Project', HttpStatus.BAD_REQUEST);
-    }
-    //2. see Member+ is project head as well, and if he is then dto.projectHead = undefined
-    if (user.type == 'Member+') {
-      if (String(user._id) != String(project.projectHead)) {
-        throw new HttpException(
-          'You are not Authorized to perform this task',
-          HttpStatus.BAD_REQUEST,
-        );
+  async assignProject(user, team, projectManagers, orgId, projectId) {
+    try {
+      //1. make sure project is associated with given organisation
+      let project = await this.getAppProject({ _id: projectId }, {});
+      if (!project || String(project.organisation) != orgId) {
+        throw new HttpException('Invalid Project', HttpStatus.BAD_REQUEST);
       }
-      // else {
-      //   if (projectHead) {
-      //     projectHead = undefined;
-      //   }
-      // }
-    }
-    const oldProject = JSON.parse(JSON.stringify(project));
-
-    //3. create add and remove arrays to see where we need to add the reference and where we need to remove it from
-    let prevTeamFull = [project.projectHead, ...(project.team || [])];
-    prevTeamFull = prevTeamFull.filter(Boolean); // Old team with all the user ids
-
-    if (!projectHead && team && team.includes(String(project.projectHead))) {
-      team.splice(team.indexOf(project.projectHead), 1); // removes project-head from input team array if it's there
-    } else if (projectHead && team && team.includes(projectHead)) {
-      team.splice(team.indexOf(projectHead), 1); // removes new project-head if he also is in the team
-    } else if (projectHead && !team) {
-      team = project.team.map((x) => String(x));
-      if (team.includes(projectHead)) {
-        team.splice(team.indexOf(projectHead), 1);
-      }
-    }
-
-    team = team ? [...new Set(team)] : undefined;
-
-    let currTeamFull = [
-      projectHead !== undefined
-        ? projectHead !== ''
-          ? projectHead
-          : undefined
-        : project.projectHead
-        ? String(project.projectHead)
-        : undefined,
-      ...team,
-    ];
-    currTeamFull = currTeamFull.filter(Boolean);
-    currTeamFull = [...new Set(currTeamFull)];
-
-    const remove = [];
-    const add = [];
-    const currTeamObj = {};
-    const prevTeamObj = {};
-    let removeHeadTeam;
-
-    prevTeamFull.forEach((x) => {
-      prevTeamObj[`${String(x._id)}`] = `${String(x._id)}`;
-    });
-    currTeamFull.forEach((x) => {
-      currTeamObj[x] = x;
-    });
-
-    if (projectHead && team == undefined && prevTeamObj[`${projectHead}`]) {
-      removeHeadTeam = true;
-    }
-    Object.keys(prevTeamObj).forEach((x) => {
-      if (!currTeamObj[x]) {
-        remove.push(mongoose.Types.ObjectId(x));
-      }
-    });
-    currTeamFull.forEach((x) => {
-      if (!prevTeamObj[`${x}`]) {
-        add.push(mongoose.Types.ObjectId(x));
-      }
-    });
-
-    //4. remove project references from the bugs and tasks according to remove array, but not from the completed tasks
-    await this.bugsService.updateBugsApp(
-      {
-        project: projectId,
-        isCompleted: false,
-        assignee: { $in: remove },
-      },
-      { $set: { assignee: undefined } },
-      { multi: true },
-    );
-    await this.tasksService.updateTasksApp(
-      {
-        status: { $ne: 'Completed' },
-        project: projectId,
-        assignee: { $in: remove },
-      },
-      { $set: { assignee: undefined } },
-      { multi: true },
-    );
-    //5. remove project's reference from the user
-    await this.usersService.updateUsers(
-      {
-        $and: [
-          {
-            _id: { $in: remove },
-          },
-          { 'userType.organisation': orgId },
-        ],
-      },
-      { $pull: { 'projects.$.projects': projectId } },
-      { multi: true },
-    );
-
-    //6. add dto.projectHead to the team if he is not member+
-    const users = await this.usersService.getMultUsers(
-      {
-        _id: { $in: currTeamFull },
-        'userType.organisation': orgId,
-      },
-      {},
-    );
-
-    let detailedHeadNew;
-    const detailedTeamObj = {};
-    let removedUsers = {};
-    const updatedTeam = [];
-    const detailedTeam = [];
-    const activities = [];
-    if (remove.length > 0) {
-      const removedUsersDetailed = await this.usersService.getMultUsers(
-        { _id: { $in: remove } },
-        { name: 1 },
+      const projectManagersAlready = project.projectManagers.map((el) =>
+        String(el),
       );
-      removedUsersDetailed.forEach((ele) => {
-        removedUsers[`${String(ele._id)}`] = ele;
-        // activities.push({
-        //   operation: "Update",
-        //   type: activityType,
-        //   createdBy: user._id,
-        //   field: "ProjectHead",
-        //   description: `${ele.name} removed from the project.`,
-        //   project: project._id,
-        //   to: ele._id,
-        // })
-      });
-    }
-    users.forEach((ele) => {
-      if (String(ele._id) == projectHead) {
-        ele.userType.forEach((element) => {
-          if (String(element.organisation) == orgId) {
-            if (['Member+', 'Member++', 'Admin'].includes(element.userType)) {
-              detailedHeadNew = {
-                _id: String(ele._id),
-                profilePicture: ele.profilePicture,
-                name: ele.name,
-              };
-            } else {
-              projectHead = undefined;
-              let objState = {
-                _id: String(ele._id),
-                profilePicture: ele.profilePicture,
-                name: ele.name,
-              };
-              detailedTeam.push(objState);
-              detailedTeamObj[String(ele._id)] = objState;
-            }
-          }
-        });
-      } else if (team && !team.includes(String(ele._id))) {
-      } else {
-        updatedTeam.push(String(ele._id));
-        let objState = {
-          _id: String(ele._id),
-          profilePicture: ele.profilePicture,
-          name: ele.name,
-        };
-        detailedTeam.push(objState);
-        detailedTeamObj[String(ele._id)] = objState;
-      }
-      if (add.includes(String(ele._id))) {
-        // activities.push({
-        //   operation: "Update",
-        //   type: activityType,
-        //   createdBy: user._id,
-        //   field: "ProjectHead",
-        //   description: `${ele.name} added to the project.`,
-        //   project: project._id,
-        //   from: ele._id,
-        // })
-      }
-    });
-
-    const oldProjectHead = project.projectHead;
-    project.projectHead =
-      projectHead !== undefined
-        ? projectHead !== ''
-          ? projectHead
-          : undefined
-        : project.projectHead;
-
-    if (String(project.projectHead) != String(oldProjectHead)) {
-      let description;
-      let from;
-      let to;
-      if (oldProjectHead && project.projectHead) {
-        from = oldProjectHead;
-        to = project.projectHead;
-        description = `Project-Head changed from ${
-          removedUsers[String(oldProjectHead)]
-            ? removedUsers[String(oldProjectHead)].name
-            : detailedTeamObj[String(oldProjectHead)].name
-        } to ${detailedHeadNew.name}`;
-      } else if (!oldProjectHead && project.projectHead) {
-        to = project.projectHead;
-        description = `New Project-Head: ${detailedHeadNew.name} added to the project.`;
-      } else if (oldProjectHead && !project.projectHead) {
-        from = oldProjectHead;
-        description = `${
-          removedUsers[String(oldProjectHead)].name
-        } removed from Project-Head designation.`;
-      }
-      this.actsService.createActivity([
-        {
-          operation: 'Update',
-          type: activityType,
-          createdBy: user._id,
-          field: 'ProjectHead',
-          description,
-          project: project._id,
-          from,
-          to,
-        },
-      ]);
-    }
-    if (removeHeadTeam) {
-      for (let i = 0; i < updatedTeam.length; i++) {
-        if (String(updatedTeam[i]) == projectHead) {
-          updatedTeam.splice(updatedTeam.indexOf(i, 1));
-          break;
+      const projectManagersToBe = projectManagers;
+      //2. see Member+ is project head as well, and if he is then dto.projectManagers = undefined
+      if (user.type == 'Member+') {
+        if (!projectManagersAlready.includes(String(user._id))) {
+          throw new HttpException(
+            'You are not Authorized to perform this task',
+            HttpStatus.BAD_REQUEST,
+          );
         }
+        // else {
+        //   if (projectManagers) {
+        //     projectManagers = undefined;
+        //   }
+        // }
       }
-    }
-    if (team) {
-      project.team = updatedTeam;
-    }
-    project = await project.save({ new: true });
-    this.actsService.createActivity(activities);
+      const oldProject = JSON.parse(JSON.stringify(project));
 
-    this.utilsService.createAssigneeActs(
-      user._id,
-      project._id,
-      'Project',
-      [...oldProject.team, oldProject.projectHead],
-      [...project.team, project.projectHead],
-      project._id,
-    );
-    let data;
-    if (projectHead && !team) {
-      data = { projectHead: detailedHeadNew };
-    } else if (team && !projectHead) {
-      data = { team: updatedTeam };
-    } else if (team && projectHead) {
-      data = { team: updatedTeam, projectHead: detailedHeadNew };
+      // ? 3. get full previous team
+
+      let prevTeamFull = [
+        ...project.projectManagers.map((el) => String(el)),
+        ...(project.team.map((el) => String(el)) || []),
+      ];
+      prevTeamFull = prevTeamFull.filter(Boolean); // Old team with all the user ids
+
+      // ? 4.  get full current team
+      const currTeamFull = [...team];
+      if (projectManagersToBe.length) {
+        currTeamFull.push(...projectManagersToBe);
+      }
+
+      // ? 5. get project managers that are removed
+      const {
+        notFoundElements: removedProjectManagers,
+      } = this.utilsService.compareTwoArrays(
+        projectManagersAlready,
+        projectManagersToBe,
+      );
+
+      // ? 6. removed team members
+
+      const {
+        notFoundElements: removedTeamMembers,
+      } = this.utilsService.compareTwoArrays(prevTeamFull, currTeamFull);
+
+      // ? 7. removed project managers that are still in team
+      const {
+        notFoundElements: removedProjectManagersButInTeam,
+      } = this.utilsService.compareTwoArrays(
+        removedProjectManagers,
+        currTeamFull,
+      );
+
+      let prevAndCurrUsersIds = [
+        ...new Set([...currTeamFull, ...prevTeamFull]),
+      ];
+
+      const prevAndCurrUsers = await this.usersService.getMultUsers(
+        {
+          _id: { $in: prevAndCurrUsersIds },
+          'userType.organisation': orgId,
+        },
+        {},
+      );
+
+      const removedUsersDetails = {};
+
+      const projectManagersDetails = {};
+
+      const teamMembersDetails = {};
+
+      let removedUsersDescription = 'Removed members are :- ';
+      let removedProjectManagersDescription =
+        'Removed project managers are :- ';
+      let newProjectManagersDescription = 'New project managers are :- ';
+      let newMembersDescription = 'New project members are :- ';
+
+      const createDescription = (opType, el, permitted = false) => {
+        let type = opType ?? '';
+
+        if (opType === null) {
+          if (!projectManagersAlready.includes(String(el._id)) && permitted) {
+            type = 'addManager';
+          } else if (
+            !project.team.map((el) => String(el)).includes(String(el._id))
+          ) {
+            type = 'addMember';
+          } else if (removedProjectManagersButInTeam.includes(String(el._id))) {
+            type = 'removeManager';
+          } else if (
+            !project.team.map((el) => String(el)).includes(String(el._id))
+          ) {
+            type = 'addMember';
+          }
+        }
+
+        switch (type) {
+          case 'removeMember':
+            removedUsersDescription =
+              removedUsersDescription + ' ' + el.name + ',';
+            break;
+
+          case 'removeManager':
+            removedProjectManagersDescription =
+              removedProjectManagersDescription + ' ' + el.name + ',';
+            break;
+
+          case 'addManager':
+            newProjectManagersDescription =
+              newProjectManagersDescription + ' ' + el.name + ',';
+            break;
+
+          case 'addMember':
+            newMembersDescription = newMembersDescription + ' ' + el.name + ',';
+            break;
+        }
+      };
+
+      prevAndCurrUsers.forEach((el) => {
+        if (removedTeamMembers.includes(String(el._id))) {
+          removedUsersDetails[el._id] = el;
+          createDescription('removeMember', el);
+        } else if (projectManagersToBe.includes(String(el._id))) {
+          const isPermitted = this.utilsService.isUserPermitted(el, orgId);
+          if (isPermitted) {
+            projectManagersDetails[el._id] = el;
+            createDescription(null, el, true);
+          } else {
+            teamMembersDetails[el._id] = el;
+            createDescription(null, el);
+          }
+        } else if (team.includes(String(el._id))) {
+          teamMembersDetails[el._id] = el;
+          createDescription(null, el);
+        }
+      });
+
+      project.team = Object.keys(teamMembersDetails);
+      project.projectManagers = Object.keys(projectManagersDetails);
+
+      project = await project.save({ new: true });
+
+      //4. remove project references from the bugs and tasks according to remove array, but not from the completed tasks
+
+      await this.bugsService.updateBugsApp(
+        {
+          project: projectId,
+          isCompleted: false,
+          assignee: { $in: removedTeamMembers },
+        },
+        { $set: { assignee: undefined } },
+        { multi: true },
+      );
+      await this.tasksService.updateTasksApp(
+        {
+          status: { $ne: 'Completed' },
+          project: projectId,
+          assignee: { $in: removedTeamMembers },
+        },
+        { $set: { assignee: undefined } },
+        { multi: true },
+      );
+      //5. remove project's reference from the user
+      await this.usersService.updateUsers(
+        {
+          $and: [
+            {
+              _id: { $in: removedTeamMembers },
+            },
+            { 'userType.organisation': orgId },
+          ],
+        },
+        { $pull: { 'projects.$.projects': projectId } },
+        { multi: true },
+      );
+
+      const activities = [
+        {
+          description: removedUsersDescription,
+          field: 'RemovedTeam',
+          operation: 'Delete',
+        },
+        {
+          description: removedProjectManagersDescription,
+          field: 'ProjectHead',
+          operation: 'Move',
+        },
+        {
+          description: newProjectManagersDescription,
+          field: 'ProjectHead',
+          operation: 'Update',
+        },
+      ].map(({ operation, field, description }) => ({
+        operation,
+        type: activityType,
+        createdBy: user._id,
+        field,
+        description,
+        project: project._id,
+        from: '',
+        to: '',
+      }));
+
+      // this.actsService.createActivity(activities);
+
+      return {
+        status: 'Successful',
+        data: [],
+        message: 'Project assigned successfully.',
+      };
+    } catch (error) {
+      console.error('Error in assignProject', error);
+      throw new HttpException('Something Went Wrong!', HttpStatus.BAD_REQUEST);
     }
-    return {
-      status: 'Successful',
-      data,
-      message: 'Project assigned succesfully.',
-    };
   }
 
   async updateCredentials(
@@ -1263,10 +1262,11 @@ export class ProjectsService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    if (
-      admin.type == 'Member+' &&
-      String(project.projectHead) != String(admin._id)
-    ) {
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      admin._id,
+    );
+    if (admin.type == 'Member+' && !isProjectManager) {
       throw new HttpException(
         'You are not authorised to perform this task!',
         HttpStatus.BAD_REQUEST,
@@ -1476,20 +1476,20 @@ export class ProjectsService {
 
   async updateRoleChanges(orgId, userId) {
     const projects = await this.projectModel.updateMany(
-      { organisation: orgId, projectHead: userId },
-      { $set: { projectHead: undefined }, $push: { team: userId } },
+      { organisation: orgId, projectManagers: { $in: userId } },
+      { $set: { projectManagers: undefined }, $push: { team: userId } },
     );
     return;
   }
 
-  async createPaymentPhase(user, orgId, projectId, dto) {
+  async createPaymentPhase(user, orgId, projectId, dto: CreatePaymentPhaseDto) {
     if (
       await this.paymentPhaseModel
         .findOne({ title: dto.title, project: projectId })
         .exec()
     ) {
       throw new HttpException(
-        'A payment phase alraedy exists with the same title!',
+        'A payment phase already exists with the same title!',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -1511,6 +1511,7 @@ export class ProjectsService {
         dto.amount !== undefined
           ? this.utilsService.encryptData(String(dto.amount))
           : undefined,
+      restricted: dto.restricted ?? false,
     });
     paymentPhase = await paymentPhase.save();
 
@@ -1525,47 +1526,82 @@ export class ProjectsService {
     };
   }
 
-  async updatePaymentPhase(projectId, paymentPhaseId, dto) {
-    let paymentPhase = await this.paymentPhaseModel
-      .findOne({ _id: paymentPhaseId, project: projectId })
-      .exec();
-    if (!paymentPhase) {
-      throw new HttpException(
-        'No such payment phase exists!',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    let newAmount = paymentPhase.amount;
-
-    if (dto.amount) {
-      let dueAmount = paymentPhase.dueAmount;
-      newAmount = this.utilsService.encryptData(dto.amount);
-      if (newAmount < dueAmount) {
+  async updatePaymentPhase(
+    projectId,
+    paymentPhaseId,
+    dto: UpdatePaymentPhaseDto,
+  ) {
+    try {
+      let paymentPhase = await this.paymentPhaseModel
+        .findOne({ _id: paymentPhaseId, project: projectId })
+        .exec();
+      if (!paymentPhase) {
         throw new HttpException(
-          'Amount can not be lower than due amount',
-          HttpStatus.NOT_ACCEPTABLE,
+          'No such payment phase exists!',
+          HttpStatus.BAD_REQUEST,
         );
       }
+
+      if (dto.amount) {
+        const prevAmount = Number(
+          await this.utilsService.decryptData(paymentPhase?.amount),
+        );
+
+        const prevDueAmount = Number(
+          await this.utilsService.decryptData(paymentPhase?.dueAmount),
+        );
+
+        let newDueAmount = prevDueAmount;
+
+        let newAmount = prevAmount;
+        if (newAmount < prevDueAmount) {
+          throw new HttpException(
+            'Amount can not be lower than due amount',
+            HttpStatus.NOT_ACCEPTABLE,
+          );
+        }
+
+        newAmount = Number(dto.amount);
+
+        if (newAmount > prevAmount) {
+          newDueAmount = prevDueAmount + newAmount - prevAmount;
+        }
+        newAmount = Number(
+          await this.utilsService.encryptData(String(newAmount)),
+        );
+        newDueAmount = Number(
+          await this.utilsService.encryptData(String(newDueAmount)),
+        );
+
+        paymentPhase.amount = newAmount;
+        paymentPhase.dueAmount = newDueAmount;
+      }
+
+      if (dto.status) {
+        paymentPhase.status = dto.status;
+      }
+
+      paymentPhase.title = dto.title ? dto.title : paymentPhase.title;
+      paymentPhase.description = dto.description
+        ? dto.description
+        : paymentPhase.description;
+      paymentPhase.currency = dto.currency
+        ? await this.utilsService.encryptData(dto.currency)
+        : paymentPhase.currency;
+
+      paymentPhase = await paymentPhase.save({ new: true });
+
+      paymentPhase = await this.utilsService.decryptPaymentPhase(paymentPhase);
+
+      return {
+        data: { paymentPhase },
+        message: 'Payment-Phase updated successfully.',
+        success: true,
+      };
+    } catch (error) {
+      console.error('Error at updatePaymentPhase:- ', error);
+      throw new HttpException('Something went wrong', HttpStatus.BAD_REQUEST);
     }
-
-    paymentPhase.title = dto.title ? dto.title : paymentPhase.title;
-    paymentPhase.description = dto.description
-      ? dto.description
-      : paymentPhase.description;
-    paymentPhase.currency = dto.currency
-      ? await this.utilsService.encryptData(dto.currency)
-      : paymentPhase.currency;
-    paymentPhase.amount = newAmount;
-
-    paymentPhase = await paymentPhase.save({ new: true });
-
-    paymentPhase = await this.utilsService.decryptPaymentPhase(paymentPhase);
-    return {
-      data: { paymentPhase },
-      message: 'Payment-Phase updated successfully.',
-      success: true,
-    };
   }
 
   async updatePaymentPhaseMilestone(
@@ -1677,21 +1713,54 @@ export class ProjectsService {
     return paymentPhase;
   }
 
+  async showPaymentPhaseInvoices(orgId, paymentPhaseId) {
+    const invoices = await this.invoiceService.getAllInvoices({
+      'services.paymentPhaseId': paymentPhaseId,
+      organisation: orgId,
+    });
+
+    invoices.forEach((el) => {
+      this.utilsService.decryptInvoiceData(el);
+    });
+
+    return {
+      data: { invoices },
+      message: 'Payment-Phases successfully fetched.',
+      success: true,
+    };
+  }
+
   async deletePaymentPhases(orgId, projectId, paymentPhaseIds) {
-    const invoices = await this.invoiceService.getInvoiceApp(
-      { paymentPhase: { $in: paymentPhaseIds }, organisation: orgId },
-      {},
-    );
-    if (invoices.length > 0) {
-      throw new HttpException(
-        'Delete all the Invoices associated with this phase!',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
+    // const invoices = await this.invoiceService.getInvoiceApp(
+    //   {
+    //     'services.paymentPhaseId': paymentPhaseIds[0],
+    //     organisation: orgId,
+    //   },
+    //   {},
+    // );
+
+    // invoices.forEach((el) => {
+    // });
+    // if (invoices.length > 0) {
+    //   throw new HttpException(
+    //     'Delete all the Invoices associated with this phase!',
+    //     HttpStatus.BAD_REQUEST,
+    //   );
+    // }
 
     const deleted = await this.paymentPhaseModel
-      .deleteMany({ _id: { $in: paymentPhaseIds } })
+      .deleteMany({
+        _id: { $in: paymentPhaseIds },
+        status: { $eq: 'Pending' },
+      })
       .exec();
+
+    if (deleted.n === 0) {
+      throw new HttpException(
+        'Payment phase can not be delete',
+        HttpStatus.CONFLICT,
+      );
+    }
 
     return {
       data: { deleted },
@@ -1704,7 +1773,10 @@ export class ProjectsService {
     return await this.paymentPhaseModel.find({ _id: paymentPhaseIds });
   }
 
-  async updatePaymentPhaseDueAmount(data: Array<any>) {
+  async updatePaymentPhaseDueAmount(
+    data: Array<any>,
+    type: 'DEDUCT' | 'ADD' = 'DEDUCT',
+  ) {
     const paymentPhases = await this.getAllPaymentPhasesWithoutPop(
       data.map((el) => el.paymentPhaseId),
     );
@@ -1713,60 +1785,65 @@ export class ProjectsService {
       const index = data.findIndex(
         (el2) => String(el2.paymentPhaseId) === String(el._id),
       );
-
       let dueAmount = Number(this.utilsService.decryptData(el.dueAmount));
-      console.log('dueAmount', dueAmount);
-      if (dueAmount > 0) {
-        let mainAmount = Number(this.utilsService.decryptData(el.amount));
-        console.log('mainAmount', mainAmount);
-        let newDueAmount = Number(
-          this.utilsService.decryptData(data[index].amount),
-        );
-        console.log('newAmount', newDueAmount);
-        if (dueAmount >= newDueAmount) {
-          let updateDueAmount: any = dueAmount - newDueAmount;
-          console.log('updateDueAmount', updateDueAmount);
-
-          // amount = amount - data[index].amount;
-
-          // amount = Number(this.utilsService.encryptData(amount));
-
-          if (Number(updateDueAmount) === 0) {
-            console.log('Paid');
-            el.status = 'Completed';
-            console.log('el', el);
-          } else if (Number(mainAmount) > Number(updateDueAmount)) {
-            console.log('Partially Paid');
-            el.status = 'Partially Paid';
-            console.log('el', el);
+      let newDueAmount = Number(
+        this.utilsService.decryptData(data[index].amount),
+      );
+      let updateDueAmount: any = dueAmount;
+      let mainAmount = Number(this.utilsService.decryptData(el.amount));
+      if (type === 'DEDUCT') {
+        if (dueAmount > 0) {
+          if (dueAmount >= newDueAmount) {
+            updateDueAmount = dueAmount - newDueAmount;
+          } else {
+            throw new HttpException(
+              'Amount can not be greater than remaining amount',
+              HttpStatus.NOT_ACCEPTABLE,
+            );
           }
-          updateDueAmount = this.utilsService.encryptData(updateDueAmount + '');
-          el.dueAmount = updateDueAmount;
-          updatePaymentPhases.push(el);
-        } else {
-          throw new HttpException(
-            'Amount can not be greater than remaining amount',
-            HttpStatus.NOT_ACCEPTABLE,
-          );
         }
+        // amount = Number(this.utilsService.encryptData(el.dueAmount));
+      } else if (type === 'ADD') {
+        el.dueAmount = data[index].amount;
+        updateDueAmount = dueAmount + newDueAmount;
       }
-      // amount = Number(this.utilsService.encryptData(el.dueAmount));
+      if (Number(updateDueAmount) === 0) {
+        el.status = 'Invoiced';
+      } else if (Number(mainAmount) > Number(updateDueAmount)) {
+        el.status = 'Partially Invoiced';
+      } else if (Number(mainAmount) === Number(updateDueAmount)) {
+        el.status = 'Pending';
+      }
+      updateDueAmount = this.utilsService.encryptData(updateDueAmount + '');
+      el.dueAmount = updateDueAmount;
+      updatePaymentPhases.push(el);
     }
     for (const element of updatePaymentPhases) {
-      console.log('element', element);
-      console.log('-----------------');
-      const pay = await element.save();
-      console.log('pay', pay);
-      console.log('>>>>>>>>>>>>>>>>>');
+      const el = await element.save();
     }
   }
 
-  async getPaymentPhases(orgId, projectId) {
+  async getPaymentPhases(orgId, projectId, user) {
+    const { type } = user;
+
+    let query = {};
+    if (type === 'Admin') {
+      query = {
+        organisation: orgId,
+        project: projectId,
+      };
+    } else {
+      query = {
+        organisation: orgId,
+        project: projectId,
+        restricted: false,
+      };
+    }
+
     let paymentPhases = await this.paymentPhaseModel
-      .find({ organisation: orgId, project: projectId })
+      .find(query)
       .populate('milestones')
       .lean();
-    console.log('paymentPhases', paymentPhases);
     for (let ele of paymentPhases) {
       ele = await this.utilsService.decryptPaymentPhase(ele);
       ele.milestoneIds = [];

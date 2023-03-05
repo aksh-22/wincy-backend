@@ -89,6 +89,7 @@ export const TaskSchema = new mongoose.Schema(
       select: false,
     },
     attachments: { type: [String] },
+    descriptionUpdatedAt :{type:Date},
   },
   {
     timestamps: true,

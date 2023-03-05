@@ -41,7 +41,9 @@ export const ProjectSchema = new mongoose.Schema(
     platforms: [String],
     attachments: [String],
     milestones: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Milestone' }],
-    projectHead: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    projectManagers: [
+      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] },
+    ],
     team: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     organisation: { type: mongoose.Schema.Types.ObjectId, ref: 'Organisation' },
     technologies: [String],

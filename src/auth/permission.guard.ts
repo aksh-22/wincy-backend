@@ -39,7 +39,12 @@ export class PermissionGuard implements CanActivate {
 
     user.userType.forEach((element) => {
       if (String(element.organisation) == params.organisation) {
-        permitted = element.userType === Role.Admin;
+        user.type = element.userType;
+        if (element.userType === Role.Admin) {
+          permitted = true;
+        } else {
+          permitted = false;
+        }
       }
     });
 

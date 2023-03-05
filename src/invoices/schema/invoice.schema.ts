@@ -28,13 +28,14 @@ export const InvoiceSchema = new mongoose.Schema(
     customer: { type: mongoose.Types.ObjectId, ref: 'Customer' },
     account: { type: mongoose.Types.ObjectId, ref: 'Account' },
     subsiduary: { type: mongoose.Types.ObjectId, ref: 'Subsiduary' },
-    // paymentPhase: [
-    //   {
-    //     type: mongoose.Types.ObjectId,
-    //     ref: 'PaymentPhase',
-    //     unique: false,
-    //   },
-    // ],
+    // field removed
+    paymentPhase: [
+      {
+        type: mongoose.Types.ObjectId,
+        ref: 'PaymentPhase',
+        unique: false,
+      },
+    ],
     // paymentPhaseIds: [
     //   {
     //     type: mongoose.Types.ObjectId,

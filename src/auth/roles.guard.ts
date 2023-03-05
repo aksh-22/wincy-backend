@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Role } from './roles.enum';
 import { ROLES_KEY } from './roles.decorator';
@@ -17,8 +23,11 @@ export class RolesGuard implements CanActivate {
     }
     const { user } = context.switchToHttp().getRequest();
     const { params } = context.switchToHttp().getRequest();
-    if(!params.organisation){
-      throw new HttpException("Please, Provide with an Organisation!", HttpStatus.BAD_REQUEST);
+    if (!params.organisation) {
+      throw new HttpException(
+        'Please, Provide with an Organisation!',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     let role;
