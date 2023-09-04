@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   forwardRef,
   HttpException,
   HttpStatus,
@@ -44,132 +45,143 @@ export class BugsService {
   //====================================================//
 
   async createBug(user, dto, projectId, attachments) {
-    const proAttach = [];
-    if (attachments?.length > 0) {
-      for (let i = 0; i < attachments.length; i++) {
-        proAttach.push(
-          await this.utilsSrvice.uploadFileS3(
-            attachments[i],
-            ConfigService.keys.FOLDER_BUG_ATTACHMENT,
-          ),
+    try {
+      console.log('dtoInit', dto);
+      console.log('attachments', attachments);
+      const proAttach = [];
+      if (attachments?.length > 0) {
+        for (let i = 0; i < attachments.length; i++) {
+          proAttach.push(
+            await this.utilsSrvice.uploadFileS3(
+              attachments[i],
+              ConfigService.keys.FOLDER_BUG_ATTACHMENT,
+            ),
+          );
+        }
+      }
+      dto.attachments = [...proAttach];
+      const project = await this.projectsService.getAppProject(
+        { _id: projectId },
+        {},
+      );
+      if (!project) {
+        throw new HttpException(
+          'No such Project Exists',
+          HttpStatus.BAD_REQUEST,
         );
       }
-    }
-    dto.attachments = [...proAttach];
-    const project = await this.projectsService.getAppProject(
-      { _id: projectId },
-      {},
-    );
-    if (!project) {
-      throw new HttpException('No such Project Exists', HttpStatus.BAD_REQUEST);
-    }
-    let isValidUser = await this.utilsSrvice.projectAssociation(
-      project,
-      String(user._id),
-    );
-    if (['Member++', 'Admin'].includes(user.type)) {
-      isValidUser = true;
-    }
-    if (!isValidUser) {
-      throw new HttpException(
-        'You are not authorised to perform this task',
-        HttpStatus.BAD_REQUEST,
+      let isValidUser = await this.utilsSrvice.projectAssociation(
+        project,
+        String(user._id),
       );
-    }
-    let counter = await this.counterModel.findOne({ project: projectId });
-    if (dto.platform) {
-      if (!project.platforms?.includes(dto.platform)) {
-        dto.platform = undefined;
+      if (['Member++', 'Admin'].includes(user.type)) {
+        isValidUser = true;
       }
-    }
-    if (dto.assignees) {
-      dto.assignees = JSON.parse(dto.assignees);
-      const team = project.team?.filter((ele) => String(ele));
-      project.projectManagers
-        ? team.push(...project.projectManagers.map((el) => String(el)))
-        : null;
-      const validAssignees = dto.assignees.filter((ele) => team.includes(ele));
-      dto.assignees = validAssignees;
-    }
-    if (dto.platform) {
-      if (!project.platforms?.includes(dto.platform)) {
-        dto.platform = undefined;
+      if (!isValidUser) {
+        throw new HttpException(
+          'You are not authorised to perform this task',
+          HttpStatus.BAD_REQUEST,
+        );
       }
-    }
-    if (dto.platform && dto.section) {
-      const platform = (
-        await this.sysService.getPlatforms({ platform: dto.platform })
-      )[0];
-      const sections = await this.projectsService.getSections(
-        projectId,
-        platform._id,
-      );
-      if (!sections.data.includes(dto.section)) {
-        dto.section = undefined;
+      let counter = await this.counterModel.findOne({ project: projectId });
+      if (dto.platform) {
+        if (!project.platforms?.includes(dto.platform)) {
+          dto.platform = undefined;
+        }
       }
-    }
+      if (dto.assignees) {
+        dto.assignees = JSON.parse(dto.assignees);
+        const team = project.team?.filter((ele) => String(ele));
+        project.projectManagers
+          ? team.push(...project.projectManagers.map((el) => String(el)))
+          : null;
+        const validAssignees = dto.assignees.filter((ele) =>
+          team.includes(ele),
+        );
+        dto.assignees = validAssignees;
+      }
+      if (dto.platform) {
+        if (!project.platforms?.includes(dto.platform)) {
+          dto.platform = undefined;
+        }
+      }
+      if (dto.platform && dto.section) {
+        const platform = (
+          await this.sysService.getPlatforms({ platform: dto.platform })
+        )[0];
+        const sections = await this.projectsService.getSections(
+          projectId,
+          platform._id,
+        );
+        if (!sections.data.includes(dto.section)) {
+          dto.section = undefined;
+        }
+      }
 
-    let bug = new this.bugModel(dto);
-    bug.createdBy = user._id;
-    bug.project = projectId;
-    if (dto.taskId) {
-      // this.tasksService.updateTasksApp({_id: dto.taskId}, {$set:{status: "ReviewFailed"}}, {});
-      let task = await this.tasksService.getTask({ _id: dto.taskId });
-      const updateStatus = await this.tasksService.updateTaskStatus(
-        user,
-        task,
-        'ReviewFailed',
-        undefined,
-      );
-      task = updateStatus.task;
-      task = await task.save({ new: true });
-      if (updateStatus && updateStatus.updateMilestone) {
-        this.tasksService.updateMilestoneStatus(user._id, task.milestone);
+      let bug = new this.bugModel(dto);
+      bug.createdBy = user._id;
+      bug.project = projectId;
+      if (dto.taskId) {
+        // this.tasksService.updateTasksApp({_id: dto.taskId}, {$set:{status: "ReviewFailed"}}, {});
+        let task = await this.tasksService.getTask({ _id: dto.taskId });
+        const updateStatus = await this.tasksService.updateTaskStatus(
+          user,
+          task,
+          'ReviewFailed',
+          undefined,
+        );
+        task = updateStatus.task;
+        task = await task.save({ new: true });
+        if (updateStatus && updateStatus.updateMilestone) {
+          this.tasksService.updateMilestoneStatus(user._id, task.milestone);
+        }
+        bug.task = dto.taskId;
       }
       bug.task = dto.taskId;
-    }
-    bug.task = dto.taskId;
 
-    if (!counter) {
-      counter = new this.counterModel({ project: projectId });
-      counter = await counter.save();
-    }
-    bug.sNo = counter.sequence;
-    bug = await bug.save();
-    bug = await this.getBugPopulated({ _id: bug._id });
+      if (!counter) {
+        counter = new this.counterModel({ project: projectId });
+        counter = await counter.save();
+      }
+      bug.sNo = counter.sequence;
+      bug = await bug.save();
+      bug = await this.getBugPopulated({ _id: bug._id });
 
-    this.utilsSrvice.createBasicInfoActs(
-      user._id,
-      'Create',
-      'Bug',
-      undefined,
-      { title: bug.title },
-      undefined,
-      { _id: bug._id },
-      projectId,
-    );
-    if (dto.assignees && dto.assignees.length > 0) {
-      this.notifyService.createNotifications({
-        description: `You have been assigned a new Bug in Project \"${project.title}\".`,
-        module: 'Bug',
-        organisation: project.organisation,
-        project: project._id,
-        accessLevel: 'Member',
-        users: dto.assignees,
-        meta: {
-          projectName: project.title,
-          bugTitle: bug.title,
-          bugId: bug._id,
-        },
-      });
+      this.utilsSrvice.createBasicInfoActs(
+        user._id,
+        'Create',
+        'Bug',
+        undefined,
+        { title: bug.title },
+        undefined,
+        { _id: bug._id },
+        projectId,
+      );
+      if (dto.assignees && dto.assignees.length > 0) {
+        this.notifyService.createNotifications({
+          description: `You have been assigned a new Bug in Project \"${project.title}\".`,
+          module: 'Bug',
+          organisation: project.organisation,
+          project: project._id,
+          accessLevel: 'Member',
+          users: dto.assignees,
+          meta: {
+            projectName: project.title,
+            bugTitle: bug.title,
+            bugId: bug._id,
+          },
+        });
+      }
+      counter.sequence = counter.sequence + 1;
+      await counter.save();
+      return {
+        data: { bug },
+        message: 'Bug created successfully.',
+        success: true,
+      };
+    } catch (error) {
+      throw new BadRequestException();
     }
-    counter.sequence = counter.sequence + 1;
-    await counter.save();
-    return {
-      data: { bug },
-      message: 'Bug created successfully.',
-      success: true,
-    };
   }
 
   //====================================================//

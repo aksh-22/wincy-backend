@@ -54,6 +54,17 @@ export class TasksController {
     return await this.tasksService.createMilestone(user, dto, orgId, projectId);
   }
 
+  // Tested
+  @Post('milestone/copy/post/:mId')
+  async copyMilestone(
+    @Request() req,
+    @Param('mId') mId: string,
+    @Param('organisation') orgId: string,
+    @Body() body,
+  ) {
+    return await this.tasksService.copyMilestone(mId, body);
+  }
+
   //================================================//
 
   // Tested

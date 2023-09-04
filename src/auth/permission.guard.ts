@@ -61,6 +61,13 @@ export class PermissionGuard implements CanActivate {
       }
     }
 
+    if (!permitted) {
+      throw new HttpException(
+        'You are not authorized for this.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
     return permitted;
   }
 }

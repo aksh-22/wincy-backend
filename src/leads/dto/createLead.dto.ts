@@ -1,14 +1,64 @@
-import { IsArray, IsEmail, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
-import { ApiProperty } from "@nestjs/swagger";
+import {
+  IsArray,
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
-export enum Status{
-  Active = "Active",
-  Idle = "Idle",
-  Awarded = "Awarded",
-  Rejected = "Rejected"
+export enum Status {
+  Active = 'Active',
+  Idle = 'Idle',
+  Awarded = 'Awarded',
+  Rejected = 'Rejected',
 }
 
-export class CreateLeadDto{
+export class CreateLeadFromWebDto {
+  @IsNotEmpty()
+  @IsString()
+  name: string;
+
+  @IsNotEmpty()
+  @IsEmail()
+  email: string;
+
+  @IsOptional()
+  @IsString()
+  country: string;
+
+  @IsOptional()
+  @IsString()
+  city: string;
+
+  @IsOptional()
+  @IsString()
+  device: string;
+
+  @IsOptional()
+  @IsString()
+  contactNumber: string;
+
+  @IsNotEmpty()
+  @IsString()
+  description: string;
+
+  @IsOptional()
+  @IsString()
+  budgetExpectation: string;
+
+  @IsOptional()
+  @IsString()
+  reference: string;
+
+  @IsNotEmpty()
+  @IsString()
+  interestedIn: string;
+}
+
+export class CreateLeadDto {
   @IsNotEmpty()
   @IsString()
   name: string;

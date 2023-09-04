@@ -1,14 +1,23 @@
-import { IsArray, IsBoolean, IsEmail, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from "class-validator";
-import { ApiProperty } from "@nestjs/swagger";
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
-export enum Status{
-  Active = "Active",
-  Idle = "Idle",
-  Awarded = "Awarded",
-  Rejected = "Rejected"
+export enum Status {
+  Active = 'Active',
+  Idle = 'Idle',
+  Awarded = 'Awarded',
+  Rejected = 'Rejected',
 }
 
-export class UpdateLeadDto{
+export class UpdateLeadDto {
   @IsOptional()
   @IsString()
   name: string;
@@ -38,7 +47,7 @@ export class UpdateLeadDto{
   currency: string;
   @IsOptional()
   @IsString()
-  budgetProposed: string
+  budgetProposed: string;
   @IsOptional()
   @IsNumber()
   durationExpectation: number;
@@ -72,5 +81,11 @@ export class UpdateLeadDto{
   @IsOptional()
   @IsString()
   managedBy: string;
+  @IsOptional()
+  @IsString()
+  city: string;
 
+  @IsOptional()
+  @IsString()
+  device: string;
 }

@@ -72,8 +72,8 @@ export class NotificationsService {
       //   }
       // })
       for (let i = 0; i < users.length; i++) {
-        if (users[i].oneSignalPlayerId) {
-          userPlayerIds.push(users[i].oneSignalPlayerId);
+        if (users[i]?.oneSignalPlayerId) {
+          userPlayerIds.push(users[i]?.oneSignalPlayerId);
         }
         let userNotification = await this.userNotiCountModel
           .findOne({ user: users[i]._id, organisation: data.organisation })
@@ -116,65 +116,80 @@ export class NotificationsService {
   }
 
   async markNotificationRead(user, orgId, notificationId) {
-    const notifications = await this.notiModel
-      .updateMany(
-        {
-          organisation: orgId,
-          _id: notificationId,
-          userStatus: { $elemMatch: { user: user._id, isRead: false } },
-        },
-        { $set: { 'userStatus.$.isRead': true } },
-        { new: true },
-      )
-      .exec();
-    return { data: { notifications }, message: '', success: true };
+    try {
+      console.log('user', user);
+      const notifications = await this.notiModel
+        .updateMany(
+          {
+            organisation: orgId,
+            _id: notificationId,
+            userStatus: { $elemMatch: { user: user._id, isRead: false } },
+          },
+          { $set: { 'userStatus.$.isRead': true } },
+          { new: true },
+        )
+        .exec();
+      return { data: { notifications }, message: '', success: true };
+    } catch (error) {
+      console.error('error in markNotificationRead', error);
+    }
   }
 
   async markAllNotificationRead(user, orgId) {
-    const notifications = await this.notiModel
-      .updateMany(
-        {
-          organisation: orgId,
-          userStatus: { $elemMatch: { user: user._id, isRead: false } },
-        },
-        { $set: { 'userStatus.$.isRead': true } },
-      )
-      .exec();
-    return { data: { notifications }, message: '', success: true };
+    try {
+      console.log('orgId', orgId);
+      const notifications = await this.notiModel
+        .updateMany(
+          {
+            organisation: orgId,
+            userStatus: { $elemMatch: { user: user._id, isRead: false } },
+          },
+          { $set: { 'userStatus.$.isRead': true } },
+        )
+        .exec();
+      return { data: { notifications }, message: '', success: true };
+    } catch (error) {
+      console.error('error in markAllNotificationRead', error);
+    }
   }
 
   async getMyNotifications(user, orgId, status, pageSize, pageNo) {
-    let filter = {};
-    let limit = 30;
-    if (pageSize) {
-      limit = pageSize;
+    try {
+      let filter = {};
+      let limit = 30;
+      if (pageSize) {
+        limit = pageSize;
+      }
+      if (!pageNo) {
+        pageNo = 1;
+      }
+      console.log('status', status);
+      if (status == 'Read') {
+        filter = {
+          userStatus: { $elemMatch: { user: user._id, isRead: true } },
+          organisation: orgId,
+        };
+      } else if (status == 'UnRead') {
+        filter = {
+          userStatus: { $elemMatch: { user: user._id, isRead: false } },
+          organisation: orgId,
+        };
+      } else {
+        filter = {
+          userStatus: { $elemMatch: { user: user._id } },
+          organisation: orgId,
+        };
+      }
+      const notifications = await this.notiModel
+        .find(filter)
+        .sort({ _id: -1 })
+        .skip(limit * (pageNo - 1))
+        .limit(limit)
+        .exec();
+      return { data: { notifications }, message: '', success: true };
+    } catch (error) {
+      console.error('error in getMyNotifications', error);
     }
-    if (!pageNo) {
-      pageNo = 1;
-    }
-    if (status == 'Read') {
-      filter = {
-        userStatus: { $elemMatch: { user: user._id, isRead: true } },
-        organisation: orgId,
-      };
-    } else if (status == 'UnRead') {
-      filter = {
-        userStatus: { $elemMatch: { user: user._id, isRead: false } },
-        organisation: orgId,
-      };
-    } else {
-      filter = {
-        userStatus: { $elemMatch: { user: user._id } },
-        organisation: orgId,
-      };
-    }
-    const notifications = await this.notiModel
-      .find(filter)
-      .sort({ _id: -1 })
-      .skip(limit * (pageNo - 1))
-      .limit(limit)
-      .exec();
-    return { data: { notifications }, message: '', success: true };
   }
 
   async checkUserNotificationCount(user, orgId) {

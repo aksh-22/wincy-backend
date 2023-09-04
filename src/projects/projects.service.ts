@@ -18,11 +18,13 @@ import { SystemService } from 'src/system/system.service';
 import { ActivitiesService } from 'src/activities/activities.service';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { InvoicesService } from 'src/invoices/invoices.service';
+import { Types } from 'mongoose';
 import { Project_Type } from './enum/project.enum';
 import {
   CreatePaymentPhaseDto,
   UpdatePaymentPhaseDto,
 } from './dto/paymentPhase.dto';
+import { PaymentScheduleModel } from 'src/payment-schedule/schema/paymentSchedule.schema';
 const activityType = 'Project';
 
 @Injectable()
@@ -298,7 +300,7 @@ export class ProjectsService {
 
   //==================================================//
 
-  async getAppProject(args, projections) {
+  async getAppProject(args: any, projections?: any) {
     const project = await this.projectModel.findOne(args, projections).exec();
     return project;
   }
@@ -1061,26 +1063,23 @@ export class ProjectsService {
       }
 
       // ? 5. get project managers that are removed
-      const {
-        notFoundElements: removedProjectManagers,
-      } = this.utilsService.compareTwoArrays(
-        projectManagersAlready,
-        projectManagersToBe,
-      );
+      const { notFoundElements: removedProjectManagers } =
+        this.utilsService.compareTwoArrays(
+          projectManagersAlready,
+          projectManagersToBe,
+        );
 
       // ? 6. removed team members
 
-      const {
-        notFoundElements: removedTeamMembers,
-      } = this.utilsService.compareTwoArrays(prevTeamFull, currTeamFull);
+      const { notFoundElements: removedTeamMembers } =
+        this.utilsService.compareTwoArrays(prevTeamFull, currTeamFull);
 
       // ? 7. removed project managers that are still in team
-      const {
-        notFoundElements: removedProjectManagersButInTeam,
-      } = this.utilsService.compareTwoArrays(
-        removedProjectManagers,
-        currTeamFull,
-      );
+      const { notFoundElements: removedProjectManagersButInTeam } =
+        this.utilsService.compareTwoArrays(
+          removedProjectManagers,
+          currTeamFull,
+        );
 
       let prevAndCurrUsersIds = [
         ...new Set([...currTeamFull, ...prevTeamFull]),
@@ -1483,6 +1482,21 @@ export class ProjectsService {
   }
 
   async createPaymentPhase(user, orgId, projectId, dto: CreatePaymentPhaseDto) {
+    const project = await this.projectModel
+      .findById(projectId)
+      .select('+paymentInfo');
+
+    let currency;
+
+    if (project.paymentInfo.currency) {
+      currency = this.utilsService.decryptData(project.paymentInfo.currency);
+    } else {
+      throw new HttpException(
+        'Set project currency first',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     if (
       await this.paymentPhaseModel
         .findOne({ title: dto.title, project: projectId })
@@ -1500,8 +1514,8 @@ export class ProjectsService {
       organisation: orgId,
       description: dto.description,
       createdBy: user._id,
-      currency: dto.currency
-        ? this.utilsService.encryptData(String(dto.currency))
+      currency: currency
+        ? this.utilsService.encryptData(String(currency))
         : undefined,
       amount:
         dto.amount !== undefined
@@ -1544,16 +1558,17 @@ export class ProjectsService {
 
       if (dto.amount) {
         const prevAmount = Number(
-          await this.utilsService.decryptData(paymentPhase?.amount),
+          this.utilsService.decryptData(paymentPhase?.amount),
         );
 
         const prevDueAmount = Number(
-          await this.utilsService.decryptData(paymentPhase?.dueAmount),
+          this.utilsService.decryptData(paymentPhase?.dueAmount),
         );
 
-        let newDueAmount = prevDueAmount;
+        let newDueAmount: any = prevDueAmount;
 
-        let newAmount = prevAmount;
+        let newAmount: any = dto.amount;
+
         if (newAmount < prevDueAmount) {
           throw new HttpException(
             'Amount can not be lower than due amount',
@@ -1566,12 +1581,10 @@ export class ProjectsService {
         if (newAmount > prevAmount) {
           newDueAmount = prevDueAmount + newAmount - prevAmount;
         }
-        newAmount = Number(
-          await this.utilsService.encryptData(String(newAmount)),
-        );
-        newDueAmount = Number(
-          await this.utilsService.encryptData(String(newDueAmount)),
-        );
+
+        newAmount = this.utilsService.encryptData(String(newAmount));
+
+        newDueAmount = this.utilsService.encryptData(String(newDueAmount));
 
         paymentPhase.amount = newAmount;
         paymentPhase.dueAmount = newDueAmount;
@@ -1600,7 +1613,7 @@ export class ProjectsService {
       };
     } catch (error) {
       console.error('Error at updatePaymentPhase:- ', error);
-      throw new HttpException('Something went wrong', HttpStatus.BAD_REQUEST);
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -1623,13 +1636,15 @@ export class ProjectsService {
         })
         .exec();
     } else {
-      paymentPhase = await this.paymentPhaseModel
-        .findOne({
-          organisation: orgId,
-          project: projectId,
-          'milestoneStatus.milestone': { $elemMatch: { $in: milestoneIds } },
-        })
-        .exec();
+      console.error('elemMatch');
+
+      // paymentPhase = await this.paymentPhaseModel
+      //   .findOne({
+      //     organisation: orgId,
+      //     project: projectId,
+      //     'milestoneStatus.milestone': { $elemMatch: { $in: milestoneIds } },
+      //   })
+      //   .exec();
     }
 
     if (!paymentPhase) {
@@ -1669,19 +1684,20 @@ export class ProjectsService {
         )
         .exec();
     } else if (isCompleted !== undefined) {
-      paymentPhase = await this.paymentPhaseModel
-        .findOneAndUpdate(
-          {
-            project: projectId,
-            _id: paymentPhase._id,
-            milestoneStatus: {
-              $elemMatch: { milestone: { $in: milestoneIds } },
-            },
-          },
-          { $set: { 'milestoneStatus.$.isCompleted': isCompleted } },
-          { new: true },
-        )
-        .exec();
+      console.error('elemMatch123');
+      // paymentPhase = await this.paymentPhaseModel
+      //   .findOneAndUpdate(
+      //     {
+      //       project: projectId,
+      //       _id: paymentPhase._id,
+      //       milestoneStatus: {
+      //         $elemMatch: { milestone: { $in: milestoneIds } },
+      //       },
+      //     },
+      //     { $set: { 'milestoneStatus.$.isCompleted': isCompleted } },
+      //     { new: true },
+      //   )
+      //   .exec();
     }
 
     let flag = true;
@@ -1705,29 +1721,35 @@ export class ProjectsService {
     paymentPhase = await paymentPhase.save({ new: true });
     paymentPhase = await this.utilsService.decryptPaymentPhase(paymentPhase);
     if (paymentPhase.milestones) {
-      paymentPhase._doc.progress = await this.tasksService.getMilestoneStatusCountPaymentPhase(
-        paymentPhase.milestones,
-      );
+      paymentPhase._doc.progress =
+        await this.tasksService.getMilestoneStatusCountPaymentPhase(
+          paymentPhase.milestones,
+        );
     }
 
     return paymentPhase;
   }
 
   async showPaymentPhaseInvoices(orgId, paymentPhaseId) {
-    const invoices = await this.invoiceService.getAllInvoices({
-      'services.paymentPhaseId': paymentPhaseId,
-      organisation: orgId,
-    });
+    try {
+      const invoices = await this.invoiceService.getAllInvoices({
+        'services.paymentPhaseId': paymentPhaseId,
+        organisation: orgId,
+      });
 
-    invoices.forEach((el) => {
-      this.utilsService.decryptInvoiceData(el);
-    });
+      invoices.forEach((el) => {
+        this.utilsService.decryptInvoiceData(el);
+      });
 
-    return {
-      data: { invoices },
-      message: 'Payment-Phases successfully fetched.',
-      success: true,
-    };
+      return {
+        data: { invoices },
+        message: 'Payment-Phases successfully fetched.',
+        success: true,
+      };
+    } catch (error) {
+      console.error('Error at showPaymentPhaseInvoices :-', error);
+      throw new HttpException('Something went wrong', HttpStatus.BAD_REQUEST);
+    }
   }
 
   async deletePaymentPhases(orgId, projectId, paymentPhaseIds) {
@@ -1844,19 +1866,58 @@ export class ProjectsService {
       .find(query)
       .populate('milestones')
       .lean();
+
+    // let paymentPhases = await this.invoiceService.invoiceAggregate([
+    //   { $unwind: '$services' },
+    //   {
+    //     $match: {...query,'services.paymentPhaseId'},
+    //   },
+    // ]);
+
     for (let ele of paymentPhases) {
       ele = await this.utilsService.decryptPaymentPhase(ele);
+      const invoices = await this.invoiceService.getAllInvoices({
+        'services.paymentPhaseId': ele._id,
+        organisation: orgId,
+      });
+      ele['invoices'] = invoices;
       ele.milestoneIds = [];
       ele.milestones.forEach((ele1) => {
         ele.milestoneIds.push(ele1._id);
       });
       if (ele.milestoneIds.length) {
-        ele.progress = await this.tasksService.getMilestoneStatusCountPaymentPhase(
-          ele.milestoneIds,
-        );
+        ele.progress =
+          await this.tasksService.getMilestoneStatusCountPaymentPhase(
+            ele.milestoneIds,
+          );
       }
     }
     return { data: { paymentPhases }, success: true, message: '' };
+  }
+
+  async fixManagers() {
+    try {
+      const getAllProjects = await this.projectModel.find();
+
+      const newA = [];
+
+      for (let index = 0; index < getAllProjects.length; index++) {
+        const element = getAllProjects[index];
+        const manager = element?.projectHead;
+        if (manager && !element.projectManagers.length) {
+          element.projectManagers = [manager];
+        }
+        if (element?.title) {
+          const a = await element.save();
+          newA.push(a);
+        }
+      }
+
+      return newA;
+    } catch (error) {
+      console.error(error);
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+    }
   }
 
   async searchProjectText(orgId, projectId, text) {
@@ -1882,6 +1943,71 @@ export class ProjectsService {
       data: { milestones, modules, tasks, bugs },
       success: true,
       message: '',
+    };
+  }
+
+  async getInvoiceProjects(status: string, filter?: any, dataType?: string) {
+    const $match = {
+      ...(status && { status }),
+      ...(filter && { ...filter }),
+    };
+    const $project = {
+      _id: 1,
+      title: 1,
+      status: 1,
+      'paymentSchedule._id': 1,
+      'paymentSchedule.amount': 1,
+      'paymentSchedule.isRestricted': 1,
+      'invoice._id': 1,
+      'invoice.amount': 1,
+      'invoice.paymentSchedule': 1,
+    };
+    const $lookup = [
+      {
+        $lookup: {
+          from: 'paymentschedulemodels',
+          localField: '_id',
+          foreignField: 'projectId',
+          as: 'paymentSchedule',
+        },
+      },
+      {
+        $lookup: {
+          from: 'invoicemodels',
+          localField: '_id',
+          foreignField: 'projectId',
+          as: 'invoice',
+        },
+      },
+    ];
+
+    const $sort = {
+      createdAt: -1,
+    };
+    const ags = [{ $match }, ...$lookup, { $sort }, { $project }];
+    const projects = await this.projectModel.aggregate(ags);
+    if (!projects.length) {
+      return {
+        message: 'Successful',
+        data: { projects: [] },
+      };
+    }
+    const projectList = [];
+    projects.forEach((el) => {
+      el.paymentSchedule.forEach((el2) => {
+        el2.amount = this.utilsService.decryptData(String(el2.amount));
+      });
+      if (el?.paymentSchedule?.length) {
+        projectList.push(el);
+      }
+      el.invoice.forEach((el2) => {
+        el2.amount = this.utilsService.decryptData(String(el2.amount));
+      });
+    });
+    const pData = dataType === 'all' ? projects : projectList;
+    return {
+      message: 'Successful',
+      data: { projects: pData },
     };
   }
 }

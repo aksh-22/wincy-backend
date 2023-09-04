@@ -13,19 +13,24 @@ import { Error } from 'mongoose';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
-  catch(exception: unknown, host: ArgumentsHost) {
+  catch(exception: HttpException, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse();
     const request = ctx.getRequest();
 
-    const status =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : exception instanceof MongoError
-        ? 400
-        : exception instanceof Error
-        ? 400
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const customStatus = exception
+      ? exception?.getResponse()?.status ?? null
+      : null;
+
+    const status = customStatus
+      ? customStatus
+      : exception instanceof HttpException
+      ? exception.getStatus()
+      : exception instanceof MongoError
+      ? 400
+      : exception instanceof Error
+      ? 400
+      : HttpStatus.INTERNAL_SERVER_ERROR;
 
     let mongoDuplicate;
     if (exception.code === 11000) {

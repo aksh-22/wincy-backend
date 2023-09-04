@@ -51,6 +51,117 @@ export class TasksService {
 
   //========================================================//
 
+  async copyMilestone(mId, body) {
+    try {
+      const milestone = await this.milestoneModel
+        .findById(mId)
+        .select('+paymentInfo');
+
+      const modules = await this.moduleModel.find({ milestone: milestone._id });
+
+      const milestoneTasks = {};
+
+      const newModules = {};
+
+      const newChildTask = {};
+
+      //! create new milestone
+
+      const {
+        title,
+        project,
+        createdBy,
+        status,
+        consumedTime,
+        paymentInfo,
+      } = milestone;
+
+      const newMilestone = await this.milestoneModel.create({
+        title: body.title,
+        project,
+        createdBy,
+        status,
+        consumedTime,
+        paymentInfo,
+      });
+
+      //! create new modules
+
+      for (let index = 0; index < modules.length; index++) {
+        const moduleEl = modules[index];
+        const { module, project, createdBy } = moduleEl;
+
+        const newModule = await this.moduleModel.create({
+          module,
+          milestone: newMilestone._id,
+          project,
+          createdBy,
+        });
+
+        const tasks = await this.taskModel.find({ module: moduleEl?._id });
+        milestoneTasks[newModule?.id] = tasks;
+
+        for (let index = 0; index < tasks.length; index++) {
+          const taskEl = tasks[index];
+          const newTask = await this.taskModel.create({
+            assignees: taskEl?.assignees,
+            platforms: taskEl?.platforms,
+            module: newModule?._id,
+            title: taskEl?.title,
+            assigneesStatus: taskEl?.assigneesStatus,
+            createdBy,
+            milestone: newMilestone?._id,
+            project,
+          });
+
+          if (taskEl?.childTasks?.length) {
+            const childTasks = await this.taskModel.find({
+              _id: newTask?.childTasks,
+            });
+
+            for (let index = 0; index < childTasks.length; index++) {
+              const newChildTaskEl = childTasks[index];
+              await this.taskModel.create({
+                assignees: newChildTaskEl?.assignees,
+                platforms: newChildTaskEl?.platforms,
+                module: newModule?._id,
+                title: newChildTaskEl?.title,
+                assigneesStatus: newChildTaskEl?.assigneesStatus,
+                createdBy,
+                milestone: newMilestone?._id,
+                project,
+                parent: taskEl?._id,
+              });
+            }
+          }
+        }
+      }
+
+      // ! create new tasks
+
+      // for (let index = 0; index < milestoneTasks.length; index++) {
+      //   const element = milestoneTasks[index]?.childTasks;
+      //   const newMilestoneTask = await this.milestoneModel.create({
+      //     assignees: element?.assignees,
+      //     platforms: element?.platforms,
+      //     module,
+      //   });
+      //   const childTask = await this.taskModel.find({ _id: element });
+      //   childTasks[element?._id] = childTask;
+      // }
+
+      return {
+        message: 'success',
+        data: { milestone, modules, milestoneTasks },
+      };
+    } catch (error) {
+      console.error('error in copy milestone', error);
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  //========================================================//
+
   async createMilestone(user, dto, orgId, projectId) {
     const project = await this.projectsService.getAppProject(
       { _id: projectId },
@@ -205,9 +316,13 @@ export class TasksService {
       dto.isSettled = undefined;
     }
     milestone.dueDate = dto.dueDate ? new Date(dto.dueDate) : milestone.dueDate;
+    console.log('ndndnnd', milestone);
+
+    // if (milestone.paymentInfo) {
     milestone.paymentInfo.amount = dto.amount
       ? await this.utilsService.encryptData(dto.amount)
       : milestone.paymentInfo.amount;
+    console.log('Test');
     milestone.paymentInfo.currency = dto.currency
       ? await this.utilsService.encryptData(dto.currency)
       : milestone.paymentInfo.currency;
@@ -221,9 +336,12 @@ export class TasksService {
       dto.isSettled !== undefined
         ? dto.isSettled
         : milestone.paymentInfo.isSettled;
+    // }
 
     milestone.lastUpdatedBy = user._id;
     milestone = await milestone.save({ new: true, select: 'paymentInfo' });
+
+    console.log('first');
 
     this.utilsService.createBasicInfoActs(
       user._id,
@@ -246,6 +364,7 @@ export class TasksService {
         undefined,
       );
     }
+    console.log('milestone---', milestone);
     if (milestone.paymentInfo) {
       milestone.paymentInfo.amount = milestone.paymentInfo.amount
         ? await this.utilsService.decryptData(milestone.paymentInfo.amount)
@@ -743,7 +862,13 @@ export class TasksService {
     });
 
     const isUserInTeam = team.includes(String(admin._id));
-    if (admin.type == 'Member' || admin.type == 'Member+') {
+
+    const isProjectManager = this.utilsService.isUserProjectManager(
+      project.projectManagers,
+      admin._id,
+    );
+
+    if (admin.type == 'Member' || !isProjectManager) {
       if (isUserInTeam) {
         if (!dto['myStatus'] && !dto['status']) {
           throw new HttpException(
@@ -758,10 +883,6 @@ export class TasksService {
     }
 
     if (!['Member++', 'Admin'].includes(admin.type)) {
-      const isProjectManager = this.utilsService.isUserProjectManager(
-        project.projectManagers,
-        admin._id,
-      );
       if (!isProjectManager && !isUserInTeam) {
         throw new HttpException(
           'User not authorized to perform this task!',
@@ -791,11 +912,6 @@ export class TasksService {
 
     task.onHoldReason =
       dto.onHoldReason !== undefined ? dto.onHoldReason : task.onHoldReason;
-
-    const isProjectManager = this.utilsService.isUserProjectManager(
-      project.projectManagers,
-      admin._id,
-    );
 
     if (isProjectManager || ['Member++', 'Admin'].includes(admin.type)) {
       if (dto.platforms) {
@@ -1410,7 +1526,7 @@ export class TasksService {
       tasks = await this.taskModel.aggregate([
         {
           $match: {
-            milestone: milestone._id,
+            project: project._id,
             parent: new Types.ObjectId(parentId),
           },
         },
@@ -1783,79 +1899,95 @@ export class TasksService {
   //========================================================//
 
   async deleteMilestone(user, orgId, milestoneId) {
-    let milestone = await this.milestoneModel
-      .findOne({ _id: milestoneId })
-      .exec();
-    const project = await this.projectsService.getAppProject(
-      { _id: milestone?.project },
-      {},
-    );
-    if (!milestone || !project || String(project.organisation) != orgId) {
-      throw new HttpException(
-        "Given milestone and organisation don't match up!",
-        HttpStatus.BAD_REQUEST,
+    try {
+      let milestone = await this.milestoneModel
+        .findOne({ _id: milestoneId })
+        .exec();
+      const project = await this.projectsService.getAppProject(
+        { _id: milestone?.project },
+        {},
       );
-    }
-
-    const isProjectManager = this.utilsService.isUserProjectManager(
-      project.projectManagers,
-      user._id,
-    );
-
-    if (
-      user.type == 'Member+' &&
-      project.projectManagers.length &&
-      !isProjectManager
-    ) {
-      throw new HttpException(
-        'User is not authorised to perform this task.',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    for (let i = 0; i < project.milestones.length; i++) {
-      if (String(project.milestones[i]) == milestoneId) {
-        project.milestones.splice(i, 1);
-        break;
+      if (!milestone || !project || String(project.organisation) != orgId) {
+        throw new HttpException(
+          "Given milestone and organisation don't match up!",
+          HttpStatus.BAD_REQUEST,
+        );
       }
+
+      const isProjectManager = this.utilsService.isUserProjectManager(
+        project.projectManagers,
+        user._id,
+      );
+
+      if (
+        user.type == 'Member+' &&
+        project.projectManagers.length &&
+        !isProjectManager
+      ) {
+        throw new HttpException(
+          'User is not authorised to perform this task.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      for (let i = 0; i < project.milestones.length; i++) {
+        if (String(project.milestones[i]) == milestoneId) {
+          project.milestones.splice(i, 1);
+          break;
+        }
+      }
+      console.log('task phase init');
+      const tasks = await this.taskModel
+        .find({ milestone: milestoneId }, { _id: 1 })
+        .exec();
+      const taskIds = tasks.map((ele) => ele._id);
+      console.log('todo delete');
+      this.todoModel.deleteMany({ task: taskIds }).exec();
+      console.log('taskModel delete');
+      this.taskModel.deleteMany({ milestone: milestoneId }).exec();
+      console.log('moduleModel delete');
+      this.moduleModel.deleteMany({ milestone: milestoneId }).exec();
+      console.log('milestoneModel delete');
+      this.milestoneModel.deleteOne({ _id: milestoneId }).exec();
+      console.log('save delete');
+      project.save();
+      console.log('save ');
+
+      // create Activity
+      this.utilsService.createBasicInfoActs(
+        user._id,
+        'Delete',
+        'Milestone',
+        undefined,
+        { title: milestone.title },
+        { _id: milestoneId },
+        undefined,
+        milestone.project,
+      );
+      console.log('createBasicInfoActs ');
+      console.log('milestoneId', milestoneId);
+
+      //update PaymentPhase status
+      this.projectsService.updatePaymentPhaseMilestone(
+        project.organisation,
+        project._id,
+        milestoneId,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      console.log('updatePaymentPhaseMilestone ');
+
+      return {
+        success: true,
+        message: 'Milestone Successfully deleted',
+        data: {},
+      };
+    } catch (error) {
+      console.error('error in delete module ', error);
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
     }
-    const tasks = await this.taskModel
-      .find({ milestone: milestoneId }, { _id: 1 })
-      .exec();
-    const taskIds = tasks.map((ele) => ele._id);
-    this.todoModel.deleteMany({ task: taskIds }).exec();
-    this.taskModel.deleteMany({ milestone: milestoneId }).exec();
-    this.moduleModel.deleteMany({ milestone: milestoneId }).exec();
-    this.milestoneModel.deleteOne({ _id: milestoneId }).exec();
-    project.save();
-
-    // create Activity
-    this.utilsService.createBasicInfoActs(
-      user._id,
-      'Delete',
-      'Milestone',
-      undefined,
-      { title: milestone.title },
-      { _id: milestoneId },
-      undefined,
-      milestone.project,
-    );
-
-    //update PaymentPhase status
-    this.projectsService.updatePaymentPhaseMilestone(
-      project.organisation,
-      project._id,
-      milestoneId,
-      undefined,
-      undefined,
-      undefined,
-      true,
-    );
-    return {
-      success: true,
-      message: 'Milestone Succesfully deleted',
-      data: {},
-    };
   }
 
   //========================================================//
@@ -2572,6 +2704,8 @@ export class TasksService {
               toModule: module.module,
             },
           });
+
+          console.log('element', JSON.stringify(element, null, 2));
 
           element.milestone = dto.milestone;
           element.module = module?._id;

@@ -1,5 +1,12 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString } from "class-validator"
-import { ApiProperty } from "@nestjs/swagger";
+import {
+  IsArray,
+  IsBoolean,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class AddCustomerDto {
   @IsNotEmpty()
@@ -8,11 +15,27 @@ export class AddCustomerDto {
 
   @IsOptional()
   @IsString()
-  email?: string;
-  
+  email: string;
+
   @IsOptional()
   @IsString()
-  address?: string;
+  address: string;
+
+  @IsOptional()
+  @IsArray()
+  projects: [string];
+
+  @IsOptional()
+  @IsString()
+  phoneNumber: string;
+
+  @IsOptional()
+  @IsString()
+  country: string;
+
+  @IsOptional()
+  @IsString()
+  assignedDate: string;
 }
 
 export class UpdateCustomerDto {
@@ -23,13 +46,29 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   email?: string;
-  
+
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsArray()
+  projects?: [string];
+
+  @IsOptional()
+  @IsString()
+  phoneNumber: string;
+
+  @IsOptional()
+  @IsString()
+  country: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDelete: boolean;
 }
 
-export class DeleteCustomersDto { 
+export class DeleteCustomersDto {
   @IsNotEmpty()
   @IsArray()
   customers: [string];

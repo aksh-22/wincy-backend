@@ -117,6 +117,7 @@ export class InvoicesController {
     @Query('financialYear') financialYear: string,
     @Query('projectId') projectId: string,
     @Query('month') month: number,
+    @Query('status') status: string,
   ) {
     const { user } = req;
     return await this.invoicesService.getInvoices(
@@ -126,6 +127,7 @@ export class InvoicesController {
       financialYear,
       Number(month),
       user,
+      status,
     );
   }
 

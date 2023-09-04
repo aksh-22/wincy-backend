@@ -338,6 +338,10 @@ export class InvoicesService {
     return await this.invoiceModel.find(args, projection).populate(populate);
   }
 
+  async invoiceAggregate(args: any) {
+    return await this.invoiceModel.aggregate(args);
+  }
+
   async getInvoicesNumber(orgId: string, subsiduaryId: string, user: any) {
     let query = {
       organisation: orgId,
@@ -354,6 +358,7 @@ export class InvoicesService {
     financialYear,
     month,
     user,
+    status,
   ) {
     let filter: any = {
       organisation: orgId,
@@ -361,6 +366,9 @@ export class InvoicesService {
 
     if (subsiduaryId) {
       filter['subsiduary'] = subsiduaryId;
+    }
+    if (status) {
+      filter['status'] = status;
     }
     if (projectId) {
       filter['project'] = projectId;

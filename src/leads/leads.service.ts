@@ -11,6 +11,7 @@ import * as mongoose from 'mongoose';
 import { SystemService } from 'src/system/system.service';
 import { UsersService } from 'src/users/users.service';
 import * as moment from 'moment';
+import { CreateLeadFromWebDto } from './dto/createLead.dto';
 
 @Injectable()
 export class LeadsService {
@@ -22,6 +23,35 @@ export class LeadsService {
     private readonly sysService: SystemService,
     private readonly usersService: UsersService,
   ) {}
+
+  async createLeadFromWebSite(dto: CreateLeadFromWebDto, organisation: string) {
+    console.log('dto', dto);
+
+    dto['status'] == 'Awarded';
+    dto.name = dto.name ? this.utilsService.encryptData(dto.name) : undefined;
+    dto.email = dto.email
+      ? this.utilsService.encryptData(dto.email)
+      : undefined;
+    dto.country = dto.country
+      ? this.utilsService.encryptData(dto.country)
+      : undefined;
+    dto.contactNumber = dto.contactNumber
+      ? this.utilsService.encryptData(dto.contactNumber)
+      : undefined;
+    dto.description = dto.description
+      ? this.utilsService.encryptData(dto.description)
+      : undefined;
+    dto.budgetExpectation = dto.budgetExpectation
+      ? this.utilsService.encryptData(dto.budgetExpectation)
+      : undefined;
+    dto.reference = dto.reference ? dto.reference : undefined;
+    dto['organisation'] = organisation;
+    const lead = await this.leadModel.create(dto);
+    return {
+      message: 'Lead created successfully',
+      data: { lead },
+    };
+  }
 
   async createLead(user, orgId, dto) {
     dto.name = dto.name ? this.utilsService.encryptData(dto.name) : undefined;
@@ -141,6 +171,8 @@ export class LeadsService {
     lead.nextFollowUp = dto.nextFollowUp
       ? new Date(dto.nextFollowUp)
       : lead.nextFollowUp;
+    lead.device = dto.device ?? lead.device;
+    lead.city = dto.city ?? lead.city;
     lead.lastUpdatedBy = user._id;
     lead.isFavourite =
       dto.isFavourite !== undefined ? dto.isFavourite : lead.isFavourite;

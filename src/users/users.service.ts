@@ -30,29 +30,33 @@ export class UsersService {
   //==============================================//
 
   async signup(dto, profilePic) {
-    dto.password = await bcrypt.hash(dto.password, 12);
-    if (profilePic) {
-      dto.profilePicture = await this.utilsService.uploadFileS3(
-        profilePic,
-        ConfigService.keys.FOLDER_PROFILE_PIC,
-      );
-    }
-    const user = new this.userModel(dto);
-    const payload = {
-      sub: user._id,
-      sessionId: uuidv4(),
-    };
-    user.sessions = [payload.sessionId];
-    await user.save();
+    try {
+      dto.password = await bcrypt.hash(dto.password, 12);
+      if (profilePic) {
+        dto.profilePicture = await this.utilsService.uploadFileS3(
+          profilePic,
+          ConfigService.keys.FOLDER_PROFILE_PIC,
+        );
+      }
+      const user = new this.userModel(dto);
+      const payload = {
+        sub: user._id,
+        sessionId: uuidv4(),
+      };
+      user.sessions = [payload.sessionId];
+      await user.save();
 
-    const access_token = this.jwtService.sign(payload);
-    const platforms = await this.systemService.getPlatforms({});
-    const technologies = await this.systemService.getTechnologies();
-    return {
-      message: 'Signup Successfully',
-      data: { user, access_token, technologies, platforms },
-      status: 'Successful',
-    };
+      const access_token = this.jwtService.sign(payload);
+      const platforms = await this.systemService.getPlatforms({});
+      const technologies = await this.systemService.getTechnologies();
+      return {
+        message: 'Signup Successfully',
+        data: { user, access_token, technologies, platforms },
+        status: 'Successful',
+      };
+    } catch (error) {
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+    }
   }
 
   //===================================================//
@@ -65,7 +69,7 @@ export class UsersService {
     );
     if (!isRequest) {
       throw new HttpException(
-        'Invitation revoked by the organisation, please ask for a new Invitation!',
+        'Invitation revoked by the organiation, please ask for a new Invitation!',
         HttpStatus.BAD_REQUEST,
       );
     }

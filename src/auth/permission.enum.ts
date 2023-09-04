@@ -5,6 +5,10 @@ export enum Permission {
   BASIC_USER = 'BASIC_USER',
   ADMIN_USER = 'ADMIN_USER',
   MARKETING = 'MARKETING',
+  EOD = 'EOD',
+  INVOICE = 'INVOICE',
+  GET_SCHEDULES = 'GET_SCHEDULES',
+  PERMIT_SCHEDULE = 'PERMIT_SCHEDULE',
 }
 
 export const permissionArray = [
@@ -14,4 +18,8 @@ export const permissionArray = [
   Permission.ADMIN_USER,
   Permission.BASIC_USER,
   Permission.MARKETING,
+  Permission.EOD,
+  Permission.INVOICE,
+  Permission.GET_SCHEDULES,
+  Permission.PERMIT_SCHEDULE,
 ];

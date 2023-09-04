@@ -1,11 +1,19 @@
-import { Body, Controller, Patch, Post, Request, UseGuards, Headers } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Patch,
+  Post,
+  Request,
+  UseGuards,
+  Headers,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { LocalAuthGuard } from './local-auth-guard';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   //Tested
   @UseGuards(LocalAuthGuard)
@@ -17,13 +25,10 @@ export class AuthController {
   //Tested
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async userLogoutV3(
-    @Request() req,
-    @Headers() headers,
-  ){
+  async userLogoutV3(@Request() req, @Headers() headers) {
     const { user } = req;
-    const {authorization} = headers;
-    const token = authorization.substring(7, authorization.length)
+    const { authorization } = headers;
+    const token = authorization.substring(7, authorization.length);
     return await this.authService.userLogout(user, token);
   }
 
@@ -34,7 +39,7 @@ export class AuthController {
     @Request() req,
     @Body('currentPassword') currentPass: string,
     @Body('newPassword') newPass: string,
-  ){
+  ) {
     const { user } = req;
 
     return await this.authService.changePassword(user, newPass, currentPass);
@@ -42,19 +47,17 @@ export class AuthController {
 
   //Tested
   @Post('reset-request')
-  async resetpasswordRequest(
-    @Body('email') email:string
-  ){
+  async resetpasswordRequest(@Body('email') email: string) {
     return await this.authService.resetPasswordMail(email);
   }
 
   //Tested
   @Patch('reset-password')
   async resetPassword(
-    @Body('passCode') passCode:string,
-    @Body('email') email:string,
+    @Body('passCode') passCode: string,
+    @Body('email') email: string,
     @Body('newPassword') newPassword: string,
-  ){
+  ) {
     return await this.authService.resetPassword(passCode, email, newPassword);
   }
 }

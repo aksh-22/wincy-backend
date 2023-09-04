@@ -41,6 +41,33 @@ import { ProjectsService } from './projects.service';
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
+  // @Get('fix-managers')
+  // async fixManager() {
+  //   return await this.projectsService.fixManagers();
+  // }
+
+  @Get('invoice/:organisation')
+  async getInvoiceProjects(
+    @Query('status') status: string,
+    @Query('dataType') dataType: string,
+  ) {
+    return await this.projectsService.getInvoiceProjects(
+      status,
+      null,
+      dataType,
+    );
+  }
+
+  @Get('invoice/:organisation:projectId')
+  async getInvoiceOneProject(
+    @Query('status') status: string,
+    @Param('projectId') projectId: string,
+  ) {
+    return await this.projectsService.getInvoiceProjects(status, {
+      _id: projectId,
+    });
+  }
+
   //==================================================//
 
   // Tested
@@ -311,17 +338,17 @@ export class ProjectsController {
 
   //===================================================//
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Delete(':organisation/:project')
-  @Roles(Role.Admin, Role['Member++'])
-  async deleteProject(
-    @Request() req,
-    @Param('organisation') orgId: string,
-    @Param('project') projectId: string,
-  ) {
-    const { user } = req;
-    return await this.projectsService.deleteProject(user, orgId, projectId);
-  }
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Delete(':organisation/:project')
+  // @Roles(Role.Admin, Role['Member++'])
+  // async deleteProject(
+  //   @Request() req,
+  //   @Param('organisation') orgId: string,
+  //   @Param('project') projectId: string,
+  // ) {
+  //   const { user } = req;
+  //   return await this.projectsService.deleteProject(user, orgId, projectId);
+  // }
 
   //===================================================//
 

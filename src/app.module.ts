@@ -18,6 +18,10 @@ import { EventsModule } from './events/events.module';
 import { QueriesModule } from './queries/queries.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { EodModule } from './eod/eod.module';
+import { PaymentSchedule } from './payment-schedule/paymentSchedule.module';
+import { Invoice } from './invoice/invoice.module';
+import { ScheduleModule } from './schedule/schedule.module';
 
 @Module({
   imports: [
@@ -37,6 +41,10 @@ import { InvoicesModule } from './invoices/invoices.module';
     QueriesModule,
     NotificationsModule,
     InvoicesModule,
+    EodModule,
+    PaymentSchedule,
+    Invoice,
+    ScheduleModule,
   ],
   controllers: [AppController],
   providers: [AppService],

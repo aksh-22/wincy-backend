@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from 'src/config/config.service';
 import { v1 as uuidv1 } from 'uuid';
 import {
@@ -9,6 +9,7 @@ import {
 } from 'crypto';
 import * as AWS from 'aws-sdk';
 import { ActivitiesService } from 'src/activities/activities.service';
+import e from 'express';
 
 const secret = ConfigService.keys.ENCRYPTION_SECRET;
 
@@ -66,19 +67,34 @@ export class UtilsService {
   }
 
   decryptData(encryptedData) {
-    console.log('encryptedData', encryptedData);
-    const parsed = JSON.parse(encryptedData);
-    const iv = Buffer.from(parsed.iv, 'hex');
-    encryptedData = Buffer.from(parsed.encryptedData, 'hex');
-    const key = scryptSync(secret, 'salt', 32) as Buffer;
-    const decipher = createDecipheriv('aes-256-ctr', key, iv);
+    try {
+      if (encryptedData === 'NaN' || encryptedData === null) {
+        return null;
+      }
+      const parsed = JSON.parse(encryptedData);
+      const iv = Buffer.from(parsed.iv, 'hex');
+      encryptedData = Buffer.from(parsed.encryptedData, 'hex');
+      const key = scryptSync(secret, 'salt', 32) as Buffer;
+      const decipher = createDecipheriv('aes-256-ctr', key, iv);
 
-    const decryptedData = Buffer.concat([
-      decipher.update(encryptedData),
-      decipher.final(),
-    ]);
-    const str = decryptedData.toString();
-    return str;
+      const decryptedData = Buffer.concat([
+        decipher.update(encryptedData),
+        decipher.final(),
+      ]);
+      const str = decryptedData.toString();
+      return str;
+    } catch (error) {
+      console.error('error in decryptData', error);
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  decryptAmount(amount) {
+    if (Number(amount) === 0) {
+      return '0';
+    }
+    const amountToSend = amount ?? null;
+    return this.decryptData(amountToSend);
   }
 
   projectAssociation(project, userId) {
@@ -103,6 +119,66 @@ export class UtilsService {
     const date = new Date(`${month}-${day}-${year}`);
 
     return date;
+  }
+
+  decryptCustomer(customer: any) {
+    if (customer?.fullName && customer?.fullName.includes('encryptedData')) {
+      customer.fullName = this.decryptData(customer.fullName);
+    }
+    if (customer?.email && customer?.email.includes('encryptedData')) {
+      customer.email = this.decryptData(customer.email);
+    }
+    if (customer?.address && customer?.address.includes('encryptedData')) {
+      customer.address = this.decryptData(customer.address);
+    }
+    return customer;
+  }
+
+  decryptPaymentScheduleData(paymentSchedule: any) {
+    const decrypted = { ...paymentSchedule };
+    if (paymentSchedule?.amount) {
+      decrypted.amount = this.decryptData(paymentSchedule.amount);
+    }
+
+    return decrypted;
+  }
+
+  decryptPaymentScheduleDataArray(paymentSchedule: any[]) {
+    paymentSchedule.forEach((el) => {
+      el.amount = this.decryptData(el.amount);
+    });
+
+    return paymentSchedule;
+  }
+
+  async decryptNewInvoiceData(invoices: any) {
+    invoices.forEach((element, index) => {
+      const decryptedPaymentSchedule = this.decryptPaymentScheduleData(
+        element.paymentSchedule,
+      );
+      const decryptedCustomer = this.decryptCustomer(element?.customer);
+      const decryptedAmount = this.decryptData(element?.amount);
+      element['customer'] = decryptedCustomer;
+      element['paymentSchedule'] = decryptedPaymentSchedule;
+      element['amount'] = decryptedAmount;
+    });
+    return invoices;
+  }
+
+  async decryptOneNewInvoiceData(invoices: any) {
+    invoices.forEach((element, index) => {
+      element?.['paymentSchedule']?.forEach((el) => {
+        console.log('el', el);
+        el.amount = this.decryptData(el.amount);
+      });
+
+      const decryptedCustomer = this.decryptCustomer(element?.customer);
+      const decryptedAmount = this.decryptData(element?.amount);
+      element['customer'] = decryptedCustomer;
+      // element['paymentSchedule'] = decryptedPaymentSchedule;
+      element['amount'] = decryptedAmount;
+    });
+    return invoices;
   }
 
   async createAssigneeActs(
@@ -433,7 +509,8 @@ export class UtilsService {
   }
 
   async decryptPaymentPhase(paymentPhase) {
-    if (!paymentPhase) return;
+    if (!paymentPhase || paymentPhase === 'NaN' || Number.isNaN(paymentPhase))
+      return;
     paymentPhase.currency = paymentPhase?.currency
       ? this.decryptData(paymentPhase.currency)
       : undefined;
@@ -474,6 +551,9 @@ export class UtilsService {
       : invoice.paymentTerms;
     if (invoice.services && invoice.services.length > 0) {
       for (const ele of invoice.services) {
+        if (ele === 'Nan' || Number.isNaN(ele)) {
+          return;
+        }
         ele.description = ele.description
           ? this.decryptData(ele.description)
           : undefined;

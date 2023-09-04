@@ -205,12 +205,12 @@ export class OrganisationsController {
     return await this.organisationsService.removeMember(user, userId, orgId);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Delete(':organisation')
-  @Roles(Role.Admin)
-  async deleteOrganisation(@Param('organisation') orgId: string) {
-    return await this.organisationsService.deleteOrganisation(orgId);
-  }
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Delete(':organisation')
+  // @Roles(Role.Admin)
+  // async deleteOrganisation(@Param('organisation') orgId: string) {
+  //   return await this.organisationsService.deleteOrganisation(orgId);
+  // }
 
   @UseGuards(JwtAuthGuard, RolesGuard, PermissionGuard)
   @Delete('subsiduaries/:organisation')
@@ -280,13 +280,19 @@ export class OrganisationsController {
   @Get('customers/:organisation')
   // @Roles(Role.Admin)
   @Permissions(Permission.CREATE_INVOICE)
-  async getCustomers(@Param('organisation') orgId: string) {
-    return await this.organisationsService.getCustomers(orgId);
+  async getCustomers(
+    @Param('organisation') organisation: string,
+    @Query('projectId') projectId: string,
+  ) {
+    return await this.organisationsService.getCustomers(
+      organisation,
+      projectId,
+    );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @Post('customers/:organisation')
-  @Roles(Role.Admin)
+  @Permissions(Permission.CREATE_INVOICE)
   async addCustomer(
     @Request() req,
     @Param('organisation') orgId: string,
@@ -296,9 +302,9 @@ export class OrganisationsController {
     return await this.organisationsService.addCustomer(user, orgId, dto);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
   @Patch('customers/:organisation/:customer')
-  @Roles(Role.Admin)
+  @Permissions(Permission.CREATE_INVOICE)
   async updateCustomer(
     @Param('organisation') orgId: string,
     @Param('customer') customerId: string,

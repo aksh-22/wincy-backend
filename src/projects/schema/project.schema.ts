@@ -44,6 +44,10 @@ export const ProjectSchema = new mongoose.Schema(
     projectManagers: [
       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] },
     ],
+    projectHead: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
     team: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     organisation: { type: mongoose.Schema.Types.ObjectId, ref: 'Organisation' },
     technologies: [String],

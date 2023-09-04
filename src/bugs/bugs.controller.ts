@@ -1,4 +1,18 @@
-import { Body, Request, Controller, Post, UseGuards, Param, Patch, Delete, UseInterceptors, UploadedFile, Get, Query, UploadedFiles } from '@nestjs/common';
+import {
+  Body,
+  Request,
+  Controller,
+  Post,
+  UseGuards,
+  Param,
+  Patch,
+  Delete,
+  UseInterceptors,
+  UploadedFile,
+  Get,
+  Query,
+  UploadedFiles,
+} from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { Roles } from 'src/auth/roles.decorator';
@@ -12,9 +26,7 @@ import { UpdateBugDto } from './dtos/updateBug.dto';
 
 @Controller('bugs')
 export class BugsController {
-  constructor(
-    private readonly bugsService: BugsService,
-  ){}
+  constructor(private readonly bugsService: BugsService) {}
 
   //=============================================//
 
@@ -23,7 +35,7 @@ export class BugsController {
   @Post(':project/:organisation')
   @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
   @UseInterceptors(
-    FilesInterceptor('attachments', 5,{
+    FilesInterceptor('attachments', 5, {
       // fileFilter: (req, attachments, cb) => {
       //   if (!attachments.originalname.match(/\.(jpeg|peg|png|gif|jpg)$/)) {
       //     cb(new Error('File Format not Supported...!!!'), false);
@@ -31,7 +43,7 @@ export class BugsController {
       //     cb(null, true);
       //   }
       // },
-      limits: {fileSize: 10 * 1000 * 1000}
+      limits: { fileSize: 10 * 1000 * 1000 },
     }),
   )
   async createBug(
@@ -39,8 +51,9 @@ export class BugsController {
     @UploadedFiles() attachments,
     @Param('project') projectId: string,
     @Body() body,
-  ){
-    const {user} = req;
+  ) {
+    console.log('body', body);
+    const { user } = req;
     return await this.bugsService.createBug(user, body, projectId, attachments);
   }
 
@@ -50,12 +63,8 @@ export class BugsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Patch(':organisation/:bug')
   @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
-  async updateBug(
-    @Request() req,
-    @Param('bug') bugId: string,
-    @Body() body,
-  ){
-    const {user} = req;
+  async updateBug(@Request() req, @Param('bug') bugId: string, @Body() body) {
+    const { user } = req;
     return await this.bugsService.updateBug(user, body, bugId);
   }
 
@@ -70,8 +79,8 @@ export class BugsController {
     @Param('project') projectId: string,
     @Param('organisation') orgId: string,
     @Body('bugs') bugs: [string],
-  ){
-    const {user} = req;
+  ) {
+    const { user } = req;
     return await this.bugsService.deleteBugs(user, bugs, projectId, orgId);
   }
 
@@ -85,10 +94,17 @@ export class BugsController {
     @Param('project') projectId: string,
     @Param('organisation') orgId: string,
     @Query() query: any,
-  ){
-    const {user} = req;
-    const {platform, pageSize, pageNo} = query;
-    return await this.bugsService.getProjectBugs(user, projectId, orgId, platform, pageSize, pageNo);
+  ) {
+    const { user } = req;
+    const { platform, pageSize, pageNo } = query;
+    return await this.bugsService.getProjectBugs(
+      user,
+      projectId,
+      orgId,
+      platform,
+      pageSize,
+      pageNo,
+    );
   }
 
   //=============================================//
@@ -99,7 +115,7 @@ export class BugsController {
     @Param('organisation') orgId: string,
     @Param('project') projectId: string,
     @Param('bug') bugId: string,
-  ){
+  ) {
     return await this.bugsService.getSingleBug(bugId, projectId, orgId);
   }
 
@@ -111,8 +127,8 @@ export class BugsController {
     @Request() req,
     @Param('organisation') orgId: string,
     @Param('project') projectId: string,
-  ){
-    const {user} = req;
+  ) {
+    const { user } = req;
     return await this.bugsService.getMyBugs(user, projectId, orgId);
   }
 
@@ -122,7 +138,7 @@ export class BugsController {
   @Patch('add-attachments/:organisation/:bug')
   @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
   @UseInterceptors(
-    FilesInterceptor('attachments', 5,{
+    FilesInterceptor('attachments', 5, {
       // fileFilter: (req, attachments, cb) => {
       //   if (!attachments.originalname.match(/\.(jpeg|peg|png|gif|jpg)$/)) {
       //     cb(new Error('File Format not Supported...!!!'), false);
@@ -130,15 +146,15 @@ export class BugsController {
       //     cb(null, true);
       //   }
       // },
-      limits: {fileSize: 10 * 1000 * 1000}
+      limits: { fileSize: 10 * 1000 * 1000 },
     }),
   )
   async addBugAttachments(
     @Request() req,
     @UploadedFiles() attachments,
     @Param('bug') bugId: string,
-  ){
-    const {user} = req;
+  ) {
+    const { user } = req;
     return await this.bugsService.addBugAttachments(user, bugId, attachments);
   }
 
@@ -148,28 +164,23 @@ export class BugsController {
   async removeBugAttachments(
     @Request() req,
     @Body('attachments') attachments: [string],
-    @Param('bug') bugId: string
-  ){
-    const {user} = req;
+    @Param('bug') bugId: string,
+  ) {
+    const { user } = req;
     return await this.bugsService.removeBugAtachments(user, bugId, attachments);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Get('count/:organisation/:project')
   @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
-  async getBugsCount(
-    @Request() req,
-    @Param('project') projectId: string
-  ){
+  async getBugsCount(@Request() req, @Param('project') projectId: string) {
     return await this.bugsService.getBugsCount(projectId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Get('count-task/:organisation/:task')
   @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
-  async getBugsCountForTask(
-    @Param('task') taskId: string
-  ){
+  async getBugsCountForTask(@Param('task') taskId: string) {
     return await this.bugsService.getBugsCountForTask(taskId);
   }
 
@@ -180,20 +191,25 @@ export class BugsController {
     @Request() req,
     @Param('project') projectId: string,
     @Param('organisation') orgId: string,
-    @Param('task') taskId: string
-  ){
-    const {user} = req;
-    return await this.bugsService.getBugsForTask(user, orgId, projectId, taskId);
+    @Param('task') taskId: string,
+  ) {
+    const { user } = req;
+    return await this.bugsService.getBugsForTask(
+      user,
+      orgId,
+      projectId,
+      taskId,
+    );
   }
-    // // Tested
-    // @UseGuards(JwtAuthGuard)
-    // @Patch('pick/:project/:bug')
-    // async pickBug(
-    //   @Request() req,
-    //   @Param('project') projectId: string,
-    //   @Param('bug') bugId: string,
-    // ){
-    //   const {user} = req;
-    //   return await this.bugsService.pickBug(user, projectId, bugId);
-    // }
+  // // Tested
+  // @UseGuards(JwtAuthGuard)
+  // @Patch('pick/:project/:bug')
+  // async pickBug(
+  //   @Request() req,
+  //   @Param('project') projectId: string,
+  //   @Param('bug') bugId: string,
+  // ){
+  //   const {user} = req;
+  //   return await this.bugsService.pickBug(user, projectId, bugId);
+  // }
 }

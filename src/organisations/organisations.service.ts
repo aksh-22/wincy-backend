@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   forwardRef,
   HttpException,
   HttpStatus,
@@ -17,6 +18,8 @@ import { UtilsService } from 'src/utils/utils.service';
 import * as sendgrid from '@sendgrid/mail';
 import { ProjectsService } from 'src/projects/projects.service';
 import { UpdatePermissionDto } from './dto/account.dto';
+import { MailerService } from '@nestjs-modules/mailer';
+import { UpdateCustomerDto } from './dto/customer.dto';
 
 @Injectable()
 export class OrganisationsService {
@@ -32,6 +35,7 @@ export class OrganisationsService {
     private readonly projectsService: ProjectsService,
     private readonly jwtService: JwtService,
     private readonly utilsService: UtilsService,
+    private readonly mailerService: MailerService,
   ) {}
 
   //===================================================//
@@ -113,6 +117,21 @@ export class OrganisationsService {
     } else {
       verificationLink = `${baseUrl}/inviteRegistration/${token}`;
     }
+
+    const invitation = await this.invitationModel
+      .findOne({ organisation: orgId, sentTo: dto.email })
+      .exec();
+    if (!invitation) {
+      await this.invitationModel.create({
+        sentBy: admin._id,
+        sentTo: dto.email,
+        organisation: orgId,
+        userType: dto.userType,
+        designation: dto.designation,
+      });
+    } else {
+      invitation.lastUpdatedAt = new Date();
+    }
     /////////
     /////////
     //code to send verificationLink over the mail
@@ -133,20 +152,13 @@ export class OrganisationsService {
 
     ////////
     ////////
-    const invitation = await this.invitationModel
-      .findOne({ organisation: orgId, sentTo: dto.email })
-      .exec();
-    if (!invitation) {
-      await this.invitationModel.create({
-        sentBy: admin._id,
-        sentTo: dto.email,
-        organisation: orgId,
-        userType: dto.userType,
-        designation: dto.designation,
-      });
-    } else {
-      invitation.lastUpdatedAt = new Date();
-    }
+    const send = await this.mailerService.sendMail({
+      from: `wincy@pairroxz.in`,
+      to: dto.email,
+      subject: `Invitation to join organization : ${org.name}`,
+      html: `Link: ${verificationLink}`,
+    });
+    console.log('send', send);
     await sendgrid.send(msg);
 
     return {
@@ -541,52 +553,102 @@ export class OrganisationsService {
   }
 
   async addCustomer(user, orgId, dto) {
-    let customer = new this.customerModel({
-      createdBy: user._id,
-      fullName: this.utilsService.encryptData(dto.fullName),
-      email: this.utilsService.encryptData(dto.email),
-      address: this.utilsService.encryptData(dto.address),
-      organisation: orgId,
-    });
+    try {
+      const oldCustomer = await this.customerModel.find({
+        projects: { $in: dto?.projects },
+      });
+      if (oldCustomer.length) {
+        throw new HttpException(
+          'Project already has a client linked',
+          HttpStatus.CONFLICT,
+        );
+      }
 
-    customer = await customer.save();
+      let customer = new this.customerModel({
+        createdBy: user._id,
+        fullName: this.utilsService.encryptData(dto.fullName),
+        email: this.utilsService.encryptData(dto.email),
+        address: this.utilsService.encryptData(dto.address),
+        projects: dto?.projects,
+        phoneNumber: dto?.phoneNumber,
+        country: dto?.country,
+        organisation: orgId,
+      });
 
-    customer = await this.utilsService.decryptCustomerData(customer);
+      customer = await customer.save();
 
-    return {
-      data: { customer },
-      success: true,
-      message: 'Customer created successfully.',
-    };
+      customer = await this.utilsService.decryptCustomerData(customer);
+
+      return {
+        data: { customer },
+        success: true,
+        message: 'Customer created successfully.',
+      };
+    } catch (error) {
+      console.error('error in addCustomer', error);
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+    }
   }
 
-  async updateCustomer(orgId, customerId, dto) {
-    let customer = await this.customerModel
-      .findOne({ _id: customerId, organisation: orgId })
-      .exec();
+  async updateCustomer(orgId, customerId, dto: UpdateCustomerDto) {
+    try {
+      console.log('dto', dto);
+      let customer = await this.customerModel
+        .findOne({ _id: customerId, organisation: orgId })
+        .exec();
 
-    customer.fullName =
-      dto.fullName !== undefined
-        ? this.utilsService.encryptData(dto.fullName)
-        : customer.fullName;
-    customer.email =
-      dto.email !== undefined
-        ? this.utilsService.encryptData(dto.email)
-        : customer.email;
-    customer.address =
-      dto.address !== undefined
-        ? this.utilsService.encryptData(dto.address)
-        : customer.address;
+      customer.fullName =
+        dto.fullName !== undefined
+          ? this.utilsService.encryptData(dto.fullName)
+          : customer.fullName;
+      customer.email =
+        dto.email !== undefined
+          ? this.utilsService.encryptData(dto.email)
+          : customer.email;
+      customer.address =
+        dto.address !== undefined
+          ? this.utilsService.encryptData(dto.address)
+          : customer.address;
 
-    customer = await customer.save({ new: true });
+      customer['phoneNumber'] = dto?.phoneNumber;
+      customer['country'] = dto?.country;
 
-    customer = await this.utilsService.decryptCustomerData(customer);
+      if (dto.projects) {
+        const pIds = [];
+        dto.projects.forEach((el) => {
+          if (el && !pIds.includes(el)) {
+            pIds.push(el);
+          }
+        });
+        customer['projects'] = pIds;
+        console.log('customer', JSON.stringify(customer, null, 2));
+      }
 
-    return {
-      data: { customer },
-      success: true,
-      message: 'Subsiduary updated successfully.',
-    };
+      if (dto.isDelete) {
+        const pIds = [];
+        dto.projects.forEach((el) => {
+          if (el && !pIds.includes(el)) {
+            pIds.push(el);
+          }
+        });
+        customer['projects'] = pIds;
+        console.log('customer', JSON.stringify(customer, null, 2));
+      }
+
+      customer = await customer.save({ new: true });
+
+      customer = await this.utilsService.decryptCustomerData(customer);
+
+      return {
+        data: { customer },
+        success: true,
+        message: 'Customer updated successfully.',
+      };
+    } catch (error) {
+      console.error('Error in updateCustomer', error);
+
+      throw new BadRequestException(error);
+    }
   }
 
   async deleteCustomers(orgId, customers) {
@@ -600,10 +662,12 @@ export class OrganisationsService {
     };
   }
 
-  async getCustomers(orgId) {
-    const customers = await this.customerModel
-      .find({ organisation: orgId })
-      .exec();
+  async getCustomers(organisation, projectId) {
+    const filter = {
+      organisation,
+      ...(projectId && { projects: { $in: projectId } }),
+    };
+    const customers = await this.customerModel.find(filter).exec();
 
     for (let i = 0; i < customers.length; i++) {
       customers[i] = await this.utilsService.decryptCustomerData(customers[i]);
