@@ -19,103 +19,70 @@ import { Permission } from 'src/auth/permission.enum';
 import { PermissionGuard } from 'src/auth/permission.guard';
 import { Permissions } from 'src/auth/permission.decorator';
 import { Query as ExpressQuery } from 'express-serve-static-core';
+import { RolesGuard } from 'src/auth/roles.guard';
+import { Role } from 'src/auth/roles.enum';
+import { Roles } from 'src/auth/roles.decorator';
 
 @Controller('eod')
 @UseGuards(JwtAuthGuard)
 export class EodController {
   constructor(private readonly eodService: EodService) {}
 
-  @Post('add')
-  async createEod(@Body() createEodDto: CreateEodDto, @Request() req) {
+  @UseGuards(RolesGuard)
+  @Post(':organisation/add')
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
+  async createEod(
+    @Param('organisation') orgId: string,
+    @Body() createEodDto: CreateEodDto,
+    @Request() req,
+  ) {
     const { user } = req;
     const userId = user._id;
-    return await this.eodService.create(createEodDto, userId);
+    const userType = user.type;
+    return await this.eodService.create(createEodDto, userId, userType);
   }
 
-  // @Get('list')
-  // async findAll(@Request() req, @Query() query: ExpressQuery) {
-  //   const { user } = req;
-  //   const userId = user._id;
-  //   return await this.eodService.showEod(userId, query);
-  // }
-
-  @Post('list')
+  @UseGuards(RolesGuard)
+  @Post(':organisation/list')
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
   async findAll(
+    @Param('organisation') orgId: string,
     @Request() req,
     @Query() query,
     @Body('startDate') startDate: any,
     @Body('endDate') endDate: any,
     @Body('projectId') projectId: string,
+    @Body('member') member: string,
+    @Body('search') search: string,
   ) {
     const { user } = req;
     const userId = user._id;
+    const userType = user.type;
     return await this.eodService.showEod(
       userId,
+      userType,
       query,
       startDate,
       endDate,
       projectId,
+      member,
+      search,
     );
   }
 
-  @Post('list12')
-  async findAlll(
+  @UseGuards(RolesGuard)
+  @Put(':organisation/update')
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
+  update(
+    @Param('organisation') orgId: string,
+    @Body() UpdateEodDto: UpdateEodDto,
     @Request() req,
-    @Query() query,
-    @Body('startDate') startDate: any,
-    @Body('endDate') endDate: any,
-    @Body('projectId') projectId: string,
   ) {
     const { user } = req;
     const userId = user._id;
-    return await this.eodService.showEod12(
-      userId,
-      query,
-      startDate,
-      endDate,
-      projectId,
-    );
+    const userType = user.type;
+    return this.eodService.update(userId, userType, UpdateEodDto);
   }
-
-  // @Put('update')
-  // update(
-  //   @Query('id') query,
-  //   @Body() UpdateEodDto: UpdateEodDto,
-  //   @Request() req,
-  // ) {
-  //   const { user } = req;
-  //   const userId = user._id;
-  //   const id = query;
-  //   return this.eodService.update(id, UpdateEodDto, userId);
-  // }
-
-  @Put('update')
-  update(@Body() UpdateEodDto: UpdateEodDto, @Request() req) {
-    const { user } = req;
-    const userId = user._id;
-    return this.eodService.update(userId, UpdateEodDto);
-  }
-
-  // @UseGuards(PermissionGuard)
-  // @Get('/eodsUpdate/:organisation')
-  // @Permissions(Permission.EOD)
-  // async eodUpdates(@Request() req, @Param('organisation') orgId: string) {
-  //   return await this.eodService.allEodUpdates(orgId);
-  // }
-
-  // @UseGuards(PermissionGuard)
-  // @Get('all/:organisation')
-  // @Permissions(Permission.EOD)
-  // async eodUpdates(@Query() query, @Param('organisation') orgId: string) {
-  //   return await this.eodService.allEodUpdates(orgId, query);
-  // }
-
-  //61554220a289af245c8b38f8
-
-  // @Get('all')
-  // async eodUpdates(@Query() query) {
-  //   return await this.eodService.allEodUpdates1(query);
-  // }
 
   @Post('all')
   async eodUpdates1(
@@ -134,17 +101,19 @@ export class EodController {
     );
   }
 
-  @Delete('delete')
-  async eodDelete(@Request() req, @Body('id') id: string) {
+  @UseGuards(RolesGuard)
+  @Delete(':organisation/delete')
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role.Member)
+  async eodDelete(
+    @Param('organisation') orgId: string,
+    @Request() req,
+    @Query() query,
+  ) {
     const { user } = req;
     const userId = user._id;
-    return await this.eodService.delete(id, userId);
-  }
+    const id = query.id;
+    const userType = user.type;
 
-  @Get('today')
-  async todayList(@Request() req) {
-    const { user } = req;
-    const userId = user._id;
-    return await this.eodService.todayEod(userId);
+    return await this.eodService.delete(id, userId, userType);
   }
 }

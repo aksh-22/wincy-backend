@@ -4,17 +4,20 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import * as mongoose from 'mongoose';
 import { Model, Types } from 'mongoose';
+import { ActivitiesService } from 'src/activities/activities.service';
+import { BugsService } from 'src/bugs/bugs.service';
+import { ConfigService } from 'src/config/config.service';
+import { EventsService } from 'src/events/events.service';
+import { NotificationsService } from 'src/notifications/notifications.service';
 import { ProjectsService } from 'src/projects/projects.service';
 import { UtilsService } from 'src/utils/utils.service';
-import * as mongoose from 'mongoose';
-import { EventsService } from 'src/events/events.service';
-import { ActivitiesService } from 'src/activities/activities.service';
-import { ConfigService } from 'src/config/config.service';
-import { NotificationsService } from 'src/notifications/notifications.service';
-import { BugsService } from 'src/bugs/bugs.service';
+import { GetMilestoneFilterDto } from './dto/getMilestone.dto';
+import { GetTasksDto } from './dto/getTasks.dto';
 
 enum StatusHierarchy {
   'NotStarted',
@@ -67,14 +70,8 @@ export class TasksService {
 
       //! create new milestone
 
-      const {
-        title,
-        project,
-        createdBy,
-        status,
-        consumedTime,
-        paymentInfo,
-      } = milestone;
+      const { title, project, createdBy, status, consumedTime, paymentInfo } =
+        milestone;
 
       const newMilestone = await this.milestoneModel.create({
         title: body.title,
@@ -171,6 +168,9 @@ export class TasksService {
       project.projectManagers,
       user._id,
     );
+    if (!isProjectManager) {
+      project.projectManagers = [];
+    }
     if (
       user.type == 'Member+' &&
       project.projectManagers.length &&
@@ -243,144 +243,158 @@ export class TasksService {
   //========================================================//
 
   async updateMilestone(user, dto, projectId, milestoneId) {
-    let milestone = await this.milestoneModel
-      .findOne({ _id: milestoneId })
-      .select('+paymentInfo')
-      .exec();
-    if (String(milestone?.project) != projectId) {
-      throw new HttpException(
-        "Given Set of Project and Milestone doesn't add up or exist at all!",
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    const project = await this.projectsService.getAppProject(
-      { _id: projectId },
-      {},
-    );
-    const isProjectManager = this.utilsService.isUserProjectManager(
-      project.projectManagers,
-      user._id,
-    );
-    if (
-      user.type == 'Member+' &&
-      project.projectManagers.length &&
-      !isProjectManager
-    ) {
-      throw new HttpException(
-        'User is not authorized to perform this task.',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    const oldMilestone = JSON.parse(JSON.stringify(milestone._doc));
-
-    milestone.title = dto.title ? dto.title : milestone.title;
-    milestone.description = dto.description
-      ? dto.description
-      : milestone.description;
-    let isCompleted = false;
-    if (dto.status) {
-      if (dto.status == 'Completed' && milestone.status != 'Completed') {
-        milestone.completedOn = new Date();
-        isCompleted = true;
-      } else if (dto.status != 'Completed' && milestone.status == 'Completed') {
-        milestone.completedOn = undefined;
+    try {
+      let milestone = await this.milestoneModel
+        .findOne({ _id: milestoneId })
+        .select('+paymentInfo')
+        .exec();
+      if (String(milestone?.project) != projectId) {
+        throw new HttpException(
+          "Given Set of Project and Milestone doesn't add up or exist at all!",
+          HttpStatus.BAD_REQUEST,
+        );
       }
-      milestone.status = dto.status;
-    }
-    if (dto.dueDate) {
-      milestone.dueDate = new Date(dto.dueDate);
-      const event = await this.eventsService.getSingleEvent(
-        { milestone: milestoneId },
+      const project = await this.projectsService.getAppProject(
+        { _id: projectId },
         {},
       );
-      if (event) {
-        event.dueDate = new Date(dto.duedate);
-        event.save();
-      } else {
-        this.eventsService.createPublicEvents(user._id, project.organisation, {
-          category: 'Milestone',
-          project: project._id,
-          milestone: milestoneId,
-          date: dto.dueDate,
-          title: `${milestone.title} -> Due Date`,
-        });
-      }
-    }
-
-    if (user.type != 'Admin') {
-      dto.amount = undefined;
-      dto.currency = undefined;
-      dto.paymentMode = undefined;
-      dto.settledOn = undefined;
-      dto.isSettled = undefined;
-    }
-    milestone.dueDate = dto.dueDate ? new Date(dto.dueDate) : milestone.dueDate;
-    console.log('ndndnnd', milestone);
-
-    // if (milestone.paymentInfo) {
-    milestone.paymentInfo.amount = dto.amount
-      ? await this.utilsService.encryptData(dto.amount)
-      : milestone.paymentInfo.amount;
-    console.log('Test');
-    milestone.paymentInfo.currency = dto.currency
-      ? await this.utilsService.encryptData(dto.currency)
-      : milestone.paymentInfo.currency;
-    milestone.paymentInfo.settledOn = dto.settledOn
-      ? new Date(dto.settledOn)
-      : milestone.paymentInfo.settledOn;
-    milestone.paymentInfo.paymentMode = dto.paymentMode
-      ? await this.utilsService.encryptData(dto.paymentMode)
-      : milestone.paymentInfo.paymentMode;
-    milestone.paymentInfo.isSettled =
-      dto.isSettled !== undefined
-        ? dto.isSettled
-        : milestone.paymentInfo.isSettled;
-    // }
-
-    milestone.lastUpdatedBy = user._id;
-    milestone = await milestone.save({ new: true, select: 'paymentInfo' });
-
-    console.log('first');
-
-    this.utilsService.createBasicInfoActs(
-      user._id,
-      'Update',
-      'Milestone',
-      dto,
-      undefined,
-      oldMilestone,
-      milestone,
-      projectId,
-    );
-    if (isCompleted) {
-      this.projectsService.updatePaymentPhaseMilestone(
-        project.organisation,
-        milestone.project,
-        milestone._id,
-        undefined,
-        true,
-        undefined,
-        undefined,
+      const isProjectManager = this.utilsService.isUserProjectManager(
+        project.projectManagers,
+        user._id,
       );
+      if (
+        user.type == 'Member+' &&
+        project.projectManagers.length &&
+        !isProjectManager
+      ) {
+        throw new HttpException(
+          'User is not authorized to perform this task.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const oldMilestone = JSON.parse(JSON.stringify(milestone._doc));
+
+      milestone.title = dto.title ? dto.title : milestone.title;
+      milestone.description = dto.description
+        ? dto.description
+        : milestone.description;
+      let isCompleted = false;
+      if (dto.status) {
+        if (dto.status == 'Completed' && milestone.status != 'Completed') {
+          milestone.completedOn = new Date();
+          isCompleted = true;
+        } else if (
+          dto.status != 'Completed' &&
+          milestone.status == 'Completed'
+        ) {
+          milestone.completedOn = undefined;
+        }
+        milestone.status = dto.status;
+      }
+      if (dto.dueDate) {
+        if (dto?.dueDate) {
+          milestone.dueDate = new Date(dto?.dueDate);
+        }
+        const event = await this.eventsService.getSingleEvent(
+          { milestone: milestoneId },
+          {},
+        );
+        if (event) {
+          event.dueDate = new Date(dto?.dueDate);
+          event.save();
+        } else {
+          this.eventsService.createPublicEvents(
+            user._id,
+            project.organisation,
+            {
+              category: 'Milestone',
+              project: project._id,
+              milestone: milestoneId,
+              date: dto.dueDate,
+              title: `${milestone.title} -> Due Date`,
+            },
+          );
+        }
+      }
+
+      if (user.type != 'Admin') {
+        dto.amount = undefined;
+        dto.currency = undefined;
+        dto.paymentMode = undefined;
+        dto.settledOn = undefined;
+        dto.isSettled = undefined;
+      }
+      milestone.dueDate = dto.dueDate
+        ? new Date(dto.dueDate)
+        : milestone.dueDate;
+
+      // if (milestone.paymentInfo) {
+      milestone.paymentInfo.amount = dto.amount
+        ? await this.utilsService.encryptData(dto.amount)
+        : milestone.paymentInfo.amount;
+      milestone.paymentInfo.currency = dto.currency
+        ? await this.utilsService.encryptData(dto.currency)
+        : milestone.paymentInfo.currency;
+      milestone.paymentInfo.settledOn = dto.settledOn
+        ? new Date(dto.settledOn)
+        : milestone.paymentInfo.settledOn;
+      milestone.paymentInfo.paymentMode = dto.paymentMode
+        ? await this.utilsService.encryptData(dto.paymentMode)
+        : milestone.paymentInfo.paymentMode;
+      milestone.paymentInfo.isSettled =
+        dto.isSettled !== undefined
+          ? dto.isSettled
+          : milestone.paymentInfo.isSettled;
+      // }
+
+      milestone.lastUpdatedBy = user._id;
+      milestone = await milestone.save({ new: true, select: 'paymentInfo' });
+
+      this.utilsService.createBasicInfoActs(
+        user._id,
+        'Update',
+        'Milestone',
+        dto,
+        undefined,
+        oldMilestone,
+        milestone,
+        projectId,
+      );
+      if (isCompleted) {
+        this.projectsService.updatePaymentPhaseMilestone(
+          project.organisation,
+          milestone.project,
+          milestone._id,
+          undefined,
+          true,
+          undefined,
+          undefined,
+        );
+      }
+      if (milestone.paymentInfo) {
+        milestone.paymentInfo.amount = milestone.paymentInfo.amount
+          ? await this.utilsService.decryptData(milestone.paymentInfo.amount)
+          : undefined;
+        milestone.paymentInfo.paymentMode = milestone.paymentInfo.paymentMode
+          ? await this.utilsService.decryptData(
+              milestone.paymentInfo.paymentMode,
+            )
+          : undefined;
+        milestone.paymentInfo.currency = milestone.paymentInfo.currency
+          ? await this.utilsService.decryptData(milestone.paymentInfo.currency)
+          : undefined;
+      }
+      return {
+        success: true,
+        data: { milestone },
+        message: 'Milestone Successfully updated',
+      };
+    } catch (error) {
+      console.error('Error in updateMilestone', error);
+
+      throw new InternalServerErrorException(error);
     }
-    console.log('milestone---', milestone);
-    if (milestone.paymentInfo) {
-      milestone.paymentInfo.amount = milestone.paymentInfo.amount
-        ? await this.utilsService.decryptData(milestone.paymentInfo.amount)
-        : undefined;
-      milestone.paymentInfo.paymentMode = milestone.paymentInfo.paymentMode
-        ? await this.utilsService.decryptData(milestone.paymentInfo.paymentMode)
-        : undefined;
-      milestone.paymentInfo.currency = milestone.paymentInfo.currency
-        ? await this.utilsService.decryptData(milestone.paymentInfo.currency)
-        : undefined;
-    }
-    return {
-      success: true,
-      data: { milestone },
-      message: 'Milestone Successfully updated',
-    };
   }
 
   //========================================================//
@@ -413,56 +427,123 @@ export class TasksService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    let milestone;
+
+    const $match = {
+      _id: new mongoose.Types.ObjectId(milestoneId),
+      project: new mongoose.Types.ObjectId(projectId),
+    };
+    const lookup = [
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'createdBy',
+          foreignField: '_id',
+          as: 'createdBy',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'lastUpdatedBy',
+          foreignField: '_id',
+          as: 'lastUpdatedBy',
+        },
+      },
+      {
+        $lookup: {
+          from: 'tasks',
+          localField: 'tasks',
+          foreignField: '_id',
+          as: 'tasks',
+        },
+      },
+    ];
+    const unwind = [
+      {
+        $unwind: {
+          path: '$createdBy',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $unwind: {
+          path: '$lastUpdatedBy',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      // {
+      //   $unwind: {
+      //     path: '$tasks',
+      //     preserveNullAndEmptyArrays: true,
+      //   },
+      // },
+    ];
+    const $project = {
+      title: 1,
+      description: 1,
+      dueDate: 1,
+      project: 1,
+      status: 1,
+      createdAt: 1,
+      'tasks._id': 1,
+      'tasks.status': 1,
+      'createdBy._id': 1,
+      'createdBy.name': 1,
+      'createdBy.profilePicture': 1,
+      'lastUpdatedBy._id': 1,
+      'lastUpdatedBy.name': 1,
+      'lastUpdatedBy.profilePicture': 1,
+    };
+
     if (['Admin'].includes(user.type)) {
-      milestone = await this.milestoneModel
-        .findOne({ _id: milestoneId, project: projectId })
-        .sort({ _id: -1 })
-        .select('+paymentInfo')
-        .populate('createdBy', ['name', 'profilePicture'])
-        .populate('lastUpdatedBy', ['name', 'profilePicture'])
-        .exec();
-      if (milestone.paymentInfo) {
-        milestone.paymentInfo.amount = milestone.paymentInfo.amount
-          ? await this.utilsService.decryptData(milestone.paymentInfo.amount)
+      $project['paymentInfo'] = 1;
+    }
+    const ags = [
+      { $match },
+      ...lookup,
+      ...unwind,
+      { $project },
+      // { $addFields },
+    ];
+    const milestone = await this.milestoneModel.aggregate(ags);
+
+    if (['Admin'].includes(user.type)) {
+      if (milestone[0].paymentInfo) {
+        milestone[0].paymentInfo.amount = milestone[0].paymentInfo.amount
+          ? await this.utilsService.decryptData(milestone[0].paymentInfo.amount)
           : undefined;
-        milestone.paymentInfo.paymentMode = milestone.paymentInfo.paymentMode
+        milestone[0].paymentInfo.paymentMode = milestone[0].paymentInfo
+          .paymentMode
           ? await this.utilsService.decryptData(
-              milestone.paymentInfo.paymentMode,
+              milestone[0].paymentInfo.paymentMode,
             )
           : undefined;
-        milestone.paymentInfo.currency = milestone.paymentInfo.currency
-          ? await this.utilsService.decryptData(milestone.paymentInfo.currency)
+        milestone[0].paymentInfo.currency = milestone[0].paymentInfo.currency
+          ? await this.utilsService.decryptData(
+              milestone[0].paymentInfo.currency,
+            )
           : undefined;
       }
-    } else {
-      if (
-        (await this.utilsService.projectAssociation(
-          project,
-          String(user._id),
-        )) ||
-        user.type == 'Member++'
-      ) {
-        milestone = await this.milestoneModel
-          .findOne({ _id: milestoneId, project: projectId })
-          .sort({ _id: -1 })
-          .populate('createdBy', ['name', 'profilePicture'])
-          .populate('lastUpdatedBy', ['name', 'profilePicture'])
-          .exec();
-      } else {
-        throw new HttpException(
-          'You are not authorized to see this data!',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
     }
-    if (!milestone) {
+
+    const taskCount = {};
+
+    if (milestone[0].tasks?.length) {
+      milestone[0].tasks?.forEach((el) => {
+        if (!taskCount[el?.status]) {
+          taskCount[el?.status] = 0;
+        }
+        taskCount[el?.status] += 1;
+      });
+    }
+    milestone[0]['taskCount'] = taskCount;
+    if (!milestone.length) {
       throw new HttpException(
         "Given set of milestone and project doesn't exist!",
         HttpStatus.BAD_REQUEST,
       );
     }
-    return { success: true, data: { milestone }, message: '' };
+    return { success: true, data: { milestone: milestone[0] }, message: '' };
   }
 
   //========================================================//
@@ -556,7 +637,20 @@ export class TasksService {
 
   //========================================================//
 
-  async getProjectMilestones(user, orgId, projectId) {
+  async getProjectMilestones(
+    user,
+    orgId,
+    projectId,
+    query: GetMilestoneFilterDto,
+  ) {
+    const {
+      assignees = [],
+      createdBy = [],
+      status = [],
+      endDate = '',
+      search = '',
+      startDate = '',
+    } = query ?? {};
     const project = await this.projectsService.getAppProject(
       { _id: projectId },
       {},
@@ -581,10 +675,7 @@ export class TasksService {
 
     // const milestones = await this.milestoneModel.find({project: projectId},{"title":1, "description":1, "status":1, "dueDate": 1, "completedOn": 1}).sort({"status": 1, "_id": 1}).exec();
 
-    const milestones = await this.milestoneModel.aggregate([
-      {
-        $match: { project: project._id },
-      },
+    let ags: any[] = [
       {
         $lookup: {
           from: 'milestonesorts',
@@ -593,6 +684,79 @@ export class TasksService {
           as: 'sequence',
         },
       },
+      {
+        $lookup: {
+          from: 'tasks',
+          localField: '_id',
+          foreignField: 'milestone',
+          as: 'tasks',
+        },
+      },
+    ];
+
+    const $match = {
+      project: project._id,
+      ...(search && { title: { $regex: search, $options: 'i' } }),
+      ...(createdBy?.length && {
+        createdBy: {
+          $in: createdBy.map((el) => new mongoose.Types.ObjectId(el)),
+        },
+      }),
+      // ...(assignees?.length && {
+      //   assignees: {
+      //     $in: assignees.map((el) => new mongoose.Types.ObjectId(el)),
+      //   },
+      // }),
+      ...(status?.length && { status: { $in: status } }),
+      ...(startDate &&
+        endDate && {
+          createdAt: { $gte: new Date(startDate), $lte: new Date(endDate) },
+        }),
+    };
+
+    if (assignees.length) {
+      ags.push({
+        $addFields: {
+          assign: {
+            $size: {
+              $filter: {
+                input: '$tasks',
+                as: 'task',
+                // in: { $sum: 1 },
+                cond: {
+                  $and: [
+                    { $isArray: '$$task.assignees' }, // Check if assignees is an array
+                    {
+                      $setIsSubset: [
+                        assignees.map((el) => new mongoose.Types.ObjectId(el)),
+                        '$$task.assignees',
+                      ],
+                    },
+                  ],
+                },
+                limit: 1,
+              },
+            },
+          },
+        },
+      });
+      // $match['assign'] = { $eq: 1 };
+    }
+
+    ags = [{ $match }, ...ags];
+
+    if (assignees.length) {
+      ags.push({
+        $match: {
+          assign: {
+            $eq: 1,
+          },
+        },
+      });
+    }
+
+    ags = [
+      ...ags,
       {
         $sort: { 'sequence.sequence': 1, dueDate: 1 },
       },
@@ -604,9 +768,13 @@ export class TasksService {
           dueDate: 1,
           completedOn: 1,
           sequence: 1,
+          assign: 1,
+          // tasks: 1,
         },
       },
-    ]);
+    ];
+
+    const milestones = await this.milestoneModel.aggregate(ags);
 
     const milestoneList = [];
     milestones.forEach((element) => {
@@ -831,9 +999,38 @@ export class TasksService {
     milestone.tasks.push(task._id);
     milestone.save();
     this.updateMilestoneStatus(admin._id, milestone._id);
+    const $match = { _id: new mongoose.Types.ObjectId(task?._id) };
+    const $lookup = {
+      from: 'users',
+      localField: 'assignees',
+      foreignField: '_id',
+      as: 'assignees',
+    };
+    const $project = {
+      platforms: 1,
+      status: 1,
+      title: 1,
+      module: 1,
+      milestone: 1,
+      project: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      assigneesStatus: 1,
+      dueDate: 1,
+      onHoldReason: 1,
+      attachments: 1,
+      createdBy: 1,
+      lastUpdatedBy: 1,
+      statusUpdatedBy: 1,
+      'assignees._id': 1,
+      'assignees.name': 1,
+      'assignees.profilePicture': 1,
+    };
+    const ags = [{ $match }, { $lookup }, { $project }];
+    const taskAgg = await this.taskModel.aggregate(ags);
     return {
       success: true,
-      data: { task },
+      data: { task: taskAgg[0] },
       message: 'Task Successfully created!',
     };
   }
@@ -1375,6 +1572,11 @@ export class TasksService {
     return task;
   }
 
+  async findById(args, select = '') {
+    const task = await this.taskModel.findById(args).select(select);
+    return task;
+  }
+
   //========================================================//
 
   async getTaskPopulated(args) {
@@ -1502,6 +1704,271 @@ export class TasksService {
       }
     }
     return { message: '', status: 'Successful', data: tasks };
+  }
+
+  async getAllMilestonesTasks(moduleId) {
+    try {
+      const $match = {
+        milestone: new mongoose.Types.ObjectId(moduleId),
+      };
+      const $lookup = {
+        from: 'tasks',
+        localField: '_id',
+        foreignField: 'module',
+        as: 'tasks',
+      };
+      const $project = {
+        module: 1,
+        milestone: 1,
+        project: 1,
+        'tasks._id': 1,
+        'tasks.title': 1,
+        'tasks.status': 1,
+      };
+      const ags = [{ $match }, { $lookup }, { $project }];
+      const module = await this.moduleModel.aggregate(ags);
+
+      return { message: '', status: 'Successful', data: { module } };
+    } catch (error) {
+      console.error('Error in getAllMilestonesTasks', error);
+
+      throw new InternalServerErrorException(error);
+    }
+  }
+
+  async getAllModuleTasks(milestoneId, moduleId, query: GetTasksDto) {
+    try {
+      if (!query) {
+        query = {
+          assignees: [],
+          createdBy: [],
+          limit: 10,
+          page: 1,
+          platforms: [],
+          search: '',
+          status: [],
+        };
+      }
+      const { createdBy, assignees, search, status, platforms } = query;
+      const $match = {
+        milestone: new mongoose.Types.ObjectId(milestoneId),
+        module: new mongoose.Types.ObjectId(moduleId),
+        parent: null,
+        ...(createdBy?.length && {
+          createdBy: {
+            $in: createdBy.map((el) => new mongoose.Types.ObjectId(el)),
+          },
+        }),
+        ...(assignees?.length && {
+          assignees: {
+            $in: assignees.map((el) => new mongoose.Types.ObjectId(el)),
+          },
+        }),
+        ...(status?.length && { status: { $in: status } }),
+        ...(platforms?.length && { platforms: { $in: platforms } }),
+        ...(search && { title: { $regex: search, $options: 'i' } }),
+      };
+
+      const lookup = [
+        {
+          $lookup: {
+            from: 'bugs',
+            localField: '_id',
+            foreignField: 'task',
+            as: 'bugs',
+          },
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assignees',
+            foreignField: '_id',
+            as: 'assignees',
+          },
+        },
+        {
+          $lookup: {
+            from: 'tasks',
+            localField: '_id',
+            foreignField: 'parent',
+            as: 'tasks',
+          },
+        },
+      ];
+
+      const $project = {
+        status: 1,
+        title: 1,
+        module: 1,
+        milestone: 1,
+        project: 1,
+        assigneesStatus: 1,
+        dueDate: 1,
+        bugs: 1,
+        description: 1,
+        attachments: 1,
+        'assignees._id': 1,
+        'assignees.name': 1,
+        'assignees.email': 1,
+        'assignees.profilePicture': 1,
+        tasks: 1,
+      };
+      const $addFields = {
+        done: {
+          $size: {
+            $filter: {
+              input: '$bugs',
+              as: 'bug',
+              cond: {
+                $ne: ['$$bug.status', 'Done'], // Your additional condition
+              },
+            },
+          },
+        },
+        subTasks: {
+          $size: '$tasks',
+        },
+        // Include other fields you want to keep here
+      };
+      const l = query.limit ? Number(query.limit) : 10;
+      const p = query.page ? Number(query.page) : 1;
+      const s = l * (p - 1);
+      const ags = [
+        { $match },
+        ...lookup,
+        { $project },
+        { $addFields },
+        { $project: { bugs: 0, tasks: 0 } },
+        {
+          $sort: {
+            'sequence.sequence': 1,
+            dueDate: -1,
+            statusValue: 1,
+            _id: -1,
+          },
+        },
+        { $limit: s + l },
+        { $skip: s },
+      ];
+      const tasks = await this.taskModel.aggregate(ags);
+
+      return {
+        message: '',
+        status: 'Successful',
+        data: {
+          tasks,
+          meta: this.utilsService.getMetaData({
+            limit: l,
+            page: p,
+            total: tasks.length,
+          }),
+        },
+      };
+    } catch (error) {
+      console.error('Error in getAllMilestonesTasks', error);
+      throw new InternalServerErrorException(error);
+    }
+  }
+
+  async getModuleTaskDetails(moduleId, taskId) {
+    try {
+      const $match = {
+        _id: new mongoose.Types.ObjectId(taskId),
+        module: new mongoose.Types.ObjectId(moduleId),
+      };
+
+      const lookup = [
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'createdBy',
+            foreignField: '_id',
+            as: 'createdBy',
+          },
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'lastUpdatedBy',
+            foreignField: '_id',
+            as: 'lastUpdatedBy',
+          },
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'statusUpdatedBy',
+            foreignField: '_id',
+            as: 'statusUpdatedBy',
+          },
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assignees',
+            foreignField: '_id',
+            as: 'assignees',
+          },
+        },
+      ];
+
+      const unwind = [
+        {
+          $unwind: {
+            path: '$createdBy',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $unwind: {
+            path: '$lastUpdatedBy',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $unwind: {
+            path: '$statusUpdatedBy',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+      ];
+
+      const $project = {
+        platforms: 1,
+        status: 1,
+        title: 1,
+        module: 1,
+        milestone: 1,
+        project: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        assigneesStatus: 1,
+        dueDate: 1,
+        onHoldReason: 1,
+        attachments: 1,
+        description: 1,
+        'createdBy._id': 1,
+        'createdBy.name': 1,
+        'createdBy.profilePicture': 1,
+        'lastUpdatedBy._id': 1,
+        'lastUpdatedBy.name': 1,
+        'lastUpdatedBy.profilePicture': 1,
+        'assignees._id': 1,
+        'assignees.name': 1,
+        'assignees.profilePicture': 1,
+        'statusUpdatedBy._id': 1,
+        'statusUpdatedBy.name': 1,
+        'statusUpdatedBy.profilePicture': 1,
+      };
+      const ags = [{ $match }, ...lookup, ...unwind, { $project }];
+      const tasks = await this.taskModel.aggregate(ags);
+
+      return { message: '', status: 'Successful', data: { tasks: tasks[0] } };
+    } catch (error) {
+      console.error('Error in getAllMilestonesTasks', error);
+
+      throw new InternalServerErrorException(error);
+    }
   }
 
   async getMilestoneSubTasks(user, milestoneId, orgId, parentId) {
@@ -1936,22 +2403,15 @@ export class TasksService {
           break;
         }
       }
-      console.log('task phase init');
       const tasks = await this.taskModel
         .find({ milestone: milestoneId }, { _id: 1 })
         .exec();
       const taskIds = tasks.map((ele) => ele._id);
-      console.log('todo delete');
       this.todoModel.deleteMany({ task: taskIds }).exec();
-      console.log('taskModel delete');
       this.taskModel.deleteMany({ milestone: milestoneId }).exec();
-      console.log('moduleModel delete');
       this.moduleModel.deleteMany({ milestone: milestoneId }).exec();
-      console.log('milestoneModel delete');
       this.milestoneModel.deleteOne({ _id: milestoneId }).exec();
-      console.log('save delete');
       project.save();
-      console.log('save ');
 
       // create Activity
       this.utilsService.createBasicInfoActs(
@@ -1964,8 +2424,6 @@ export class TasksService {
         undefined,
         milestone.project,
       );
-      console.log('createBasicInfoActs ');
-      console.log('milestoneId', milestoneId);
 
       //update PaymentPhase status
       this.projectsService.updatePaymentPhaseMilestone(
@@ -1977,7 +2435,6 @@ export class TasksService {
         undefined,
         true,
       );
-      console.log('updatePaymentPhaseMilestone ');
 
       return {
         success: true,
@@ -2704,8 +3161,6 @@ export class TasksService {
               toModule: module.module,
             },
           });
-
-          console.log('element', JSON.stringify(element, null, 2));
 
           element.milestone = dto.milestone;
           element.module = module?._id;

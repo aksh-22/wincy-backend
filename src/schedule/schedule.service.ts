@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { Schedule, ScheduleDocument } from './schema/schedule.schema';
 import { InjectModel } from '@nestjs/mongoose';
+import { Query } from 'express-serve-static-core';
+import { ObjectId } from 'mongodb';
 import { Model } from 'mongoose';
 import {
   CreateScheduleDto,
@@ -8,9 +9,7 @@ import {
   Status,
   Type,
 } from './dto/createSchedule.dto';
-import { Query } from 'express-serve-static-core';
-import { ObjectId } from 'mongodb';
-import { count } from 'console';
+import { Schedule, ScheduleDocument } from './schema/schedule.schema';
 
 @Injectable()
 export class ScheduleService {
@@ -587,7 +586,6 @@ export class ScheduleService {
   //       const skip = resPerPage * (currentPage - 1);
 
   //       const count = await this.ScheduleModel.count({ date: query.fromDate });
-  //       console.log(count);
   //       const totalPages = Math.ceil(count / resPerPage);
 
   //       const hasNextPage = currentPage < totalPages;

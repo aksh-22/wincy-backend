@@ -50,11 +50,13 @@ export class ProjectsController {
   async getInvoiceProjects(
     @Query('status') status: string,
     @Query('dataType') dataType: string,
+    @Param('organisation') organisation: string,
   ) {
     return await this.projectsService.getInvoiceProjects(
       status,
       null,
       dataType,
+      organisation,
     );
   }
 
@@ -181,14 +183,25 @@ export class ProjectsController {
     @Param('organisation') orgId: string,
     @Query('status') status: string,
     @Query('projectType') projectType: Project_Type,
+    @Query('assignees') assignees: string[],
+    @Query('technologies') technologies: string,
+    @Query('limit') limit: number,
+    @Query('page') page: number,
+    @Query('search') search: string,
   ) {
     const { user } = req;
-    return await this.projectsService.getMyProjects(
+    const filer = {
       user,
       orgId,
       status,
       projectType,
-    );
+      assignees,
+      technologies,
+      page,
+      limit,
+      search,
+    };
+    return await this.projectsService.getMyProjects(filer);
   }
 
   //====================================================//

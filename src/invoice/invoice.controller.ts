@@ -10,21 +10,21 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { InvoiceService } from './invoice.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
-import { PermissionGuard } from 'src/auth/permission.guard';
 import { Permissions } from 'src/auth/permission.decorator';
 import { Permission } from 'src/auth/permission.enum';
+import { PermissionGuard } from 'src/auth/permission.guard';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { INVOICE_STATUS } from './enum/status.enum';
+import { InvoiceService } from './invoice.service';
 
 @Controller('invoice-new')
-@UseGuards(JwtAuthGuard, PermissionGuard)
-@Permissions(Permission.INVOICE)
 export class InvoiceController {
   constructor(private readonly invoiceService: InvoiceService) {}
 
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.INVOICE)
   @Get(':organisation')
   async getInvoice(
     @Request() req,
@@ -53,6 +53,8 @@ export class InvoiceController {
     );
   }
 
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.INVOICE)
   @Post(':organisation')
   async createInvoice(
     @Body() body: CreateInvoiceDto,
@@ -66,6 +68,8 @@ export class InvoiceController {
     );
   }
 
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.INVOICE)
   @Patch(':organisation')
   async updateInvoice(
     @Body() body: UpdateInvoiceDto,
@@ -79,6 +83,8 @@ export class InvoiceController {
     );
   }
 
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.INVOICE)
   @Get('number/:organisation/:subsiduaryId')
   async getInvoicesNumber(
     @Param('organisation') orgId: string,
@@ -87,11 +93,15 @@ export class InvoiceController {
     return await this.invoiceService.getInvoicesNumber(orgId, subsiduaryId);
   }
 
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.INVOICE)
   @Delete(':organisation/:invoiceId')
   async deletePaymentSchedule(@Param('invoiceId') invoiceId: string) {
     return await this.invoiceService.deleteInvoice(invoiceId);
   }
 
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.INVOICE)
   @Get('invoice-details/:organisation')
   async getProjectInvoiceData(
     @Request() req,
@@ -107,5 +117,10 @@ export class InvoiceController {
       year,
       month,
     });
+  }
+
+  @Get('invoice-list/all-list')
+  async getAll() {
+    return await this.invoiceService.getAll();
   }
 }

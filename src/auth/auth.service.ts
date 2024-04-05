@@ -1,15 +1,13 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { UsersService } from 'src/users/users.service';
-import * as bcrypt from 'bcrypt';
-import { v4 as uuidv4 } from 'uuid';
-import { JwtService } from '@nestjs/jwt';
-import { Model } from 'mongoose';
-import { InjectModel } from '@nestjs/mongoose';
-import { SystemService } from 'src/system/system.service';
-import { UtilsService } from 'src/utils/utils.service';
-import * as sendgrid from '@sendgrid/mail';
-import { ConfigService } from 'src/config/config.service';
 import { MailerService } from '@nestjs-modules/mailer';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
+import * as bcrypt from 'bcrypt';
+import { Model } from 'mongoose';
+import { SystemService } from 'src/system/system.service';
+import { UsersService } from 'src/users/users.service';
+import { UtilsService } from 'src/utils/utils.service';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AuthService {
@@ -141,8 +139,6 @@ export class AuthService {
         html: `Pass Code: ${passCode}`,
       });
       await newRequest.save();
-
-      console.log('send', JSON.stringify(send, null, 2));
 
       return {
         message: 'Please enter pass code sent into your e-mail.',

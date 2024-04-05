@@ -5,16 +5,21 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import * as bcrypt from 'bcrypt';
-import { v4 as uuidv4 } from 'uuid';
-import { ConfigService } from 'src/config/config.service';
 import { JwtService } from '@nestjs/jwt';
-import { UtilsService } from 'src/utils/utils.service';
+import { InjectModel } from '@nestjs/mongoose';
+import * as bcrypt from 'bcrypt';
+import * as moment from 'moment';
+import { Model } from 'mongoose';
+import { ConfigService } from 'src/config/config.service';
 import { OrganisationsService } from 'src/organisations/organisations.service';
+import { SalaryService } from 'src/salary-management/salary.service';
 import { SystemService } from 'src/system/system.service';
+import { UtilsService } from 'src/utils/utils.service';
+import { v4 as uuidv4 } from 'uuid';
+import { UpdateOtherData, UpdateProfileDto } from './dto/updateUser.dto';
 
 @Injectable()
 export class UsersService {
@@ -22,6 +27,7 @@ export class UsersService {
     @InjectModel('User') private readonly userModel: Model<any>,
     private systemService: SystemService,
     private jwtService: JwtService,
+    private salaryService: SalaryService,
     private utilsService: UtilsService,
     @Inject(forwardRef(() => OrganisationsService))
     private organisationsService: OrganisationsService,
@@ -119,7 +125,7 @@ export class UsersService {
 
   //===================================================//
 
-  async updateProfile(user, dto, profilePic) {
+  async updateProfile(user, dto: UpdateProfileDto, profilePic) {
     if (profilePic) {
       if (user.profilePic) {
         await this.utilsService.deleteFileS3(
@@ -149,6 +155,54 @@ export class UsersService {
         dto.accountNumber,
       );
     }
+    if (dto.bankName) {
+      if (!user.accountDetails) {
+        user.accountDetails = {};
+      }
+      user.accountDetails.bankName = this.utilsService.encryptData(
+        dto.bankName,
+      );
+    }
+    if (dto.branchName) {
+      if (!user.accountDetails) {
+        user.accountDetails = {};
+      }
+      user.accountDetails.branchName = this.utilsService.encryptData(
+        dto.branchName,
+      );
+    }
+
+    if (dto.officialEmail) {
+      user.officialEmail = dto.officialEmail;
+    }
+
+    if (dto.personalEmail) {
+      user.personalEmail = dto.personalEmail;
+    }
+
+    if (dto.residentialAddress) {
+      user.residentialAddress = dto.residentialAddress;
+    }
+
+    if (dto.permanentAddress) {
+      user.permanentAddress = dto.permanentAddress;
+    }
+
+    if (dto.terminationDate) {
+      user.terminationDate = dto.terminationDate;
+    }
+
+    if (dto.pan) {
+      user.pan = this.utilsService.encryptData(dto.pan);
+    }
+
+    if (dto.aadhaar) {
+      user.aadhaar = this.utilsService.encryptData(dto.aadhaar);
+    }
+
+    if (dto.employeeCode) user.employeeCode = dto.employeeCode;
+    if (dto.bondStartDate) user.bondStartDate = dto.bondStartDate;
+    if (dto.bondEndDate) user.bondEndDate = dto.bondEndDate;
 
     const updatedUser = await user.save({ new: true });
     if (updatedUser.accountDetails) {
@@ -158,10 +212,22 @@ export class UsersService {
         );
       }
       if (updatedUser.accountDetails.accountNumber) {
-        updatedUser.accountDetails.accountNumber = this.utilsService.decryptData(
-          updatedUser.accountDetails.accountNumber,
+        updatedUser.accountDetails.accountNumber =
+          this.utilsService.decryptData(
+            updatedUser.accountDetails.accountNumber,
+          );
+      }
+      if (updatedUser.pan) {
+        updatedUser.pan = this.utilsService.decryptData(updatedUser.pan);
+      }
+      if (updatedUser.aadhaar) {
+        updatedUser.aadhaar = this.utilsService.decryptData(
+          updatedUser.aadhaar,
         );
       }
+    }
+    if (user?.type !== 'Admin') {
+      user.terminationDate = undefined;
     }
     updatedUser.sessions = undefined;
     return updatedUser;
@@ -211,10 +277,122 @@ export class UsersService {
           user.accountDetails.accountNumber,
         );
       }
+      if (user.accountDetails.branchName) {
+        user.accountDetails.branchName = this.utilsService.decryptData(
+          user.accountDetails.branchName,
+        );
+      }
+      if (user.accountDetails.bankName) {
+        user.accountDetails.bankName = this.utilsService.decryptData(
+          user.accountDetails.bankName,
+        );
+      }
     }
+    if (user.pan) {
+      user.pan = this.utilsService.decryptData(user.pan);
+    }
+    if (user.aadhaar) {
+      user.aadhaar = this.utilsService.decryptData(user.aadhaar);
+    }
+
     user.sessions = undefined;
     user.password = undefined;
     user.verified = undefined;
     return { data: { user }, message: '', success: true };
+  }
+
+  async getUserProfile(id) {
+    try {
+      const user = await this.userModel.findById(id);
+      if (user.accountDetails) {
+        if (user.accountDetails.ifsc) {
+          user.accountDetails.ifsc = this.utilsService.decryptData(
+            user.accountDetails.ifsc,
+          );
+        }
+        if (user.accountDetails.accountNumber) {
+          user.accountDetails.accountNumber = this.utilsService.decryptData(
+            user.accountDetails.accountNumber,
+          );
+        }
+        if (user.accountDetails.branchName) {
+          user.accountDetails.branchName = this.utilsService.decryptData(
+            user.accountDetails.branchName,
+          );
+        }
+        if (user.accountDetails.bankName) {
+          user.accountDetails.bankName = this.utilsService.decryptData(
+            user.accountDetails.bankName,
+          );
+        }
+      }
+      if (user.pan) {
+        user.pan = this.utilsService.decryptData(user.pan);
+      }
+      if (user.aadhaar) {
+        user.aadhaar = this.utilsService.decryptData(user.aadhaar);
+      }
+
+      user.sessions = undefined;
+      user.password = undefined;
+      user.verified = undefined;
+
+      const salaryDetail = await this.salaryService.salaryDetail(user._id);
+
+      user.salaryDetail = salaryDetail;
+
+      return { data: { user }, message: '', success: true };
+    } catch (error) {
+      console.error('error in getUserProfile', error);
+
+      throw new InternalServerErrorException(error);
+    }
+  }
+
+  async updateUser(id, dto: UpdateOtherData) {
+    try {
+      const { employeeCode, bondStartDate, bondEndDate } = dto;
+      const user = await this.userModel.findById(id);
+      if (!user) {
+        throw new NotFoundException();
+      }
+      if (user.dateOfBirth && typeof user.dateOfBirth === 'string') {
+        user.dateOfBirth = moment(user.dateOfBirth);
+      }
+      if (employeeCode) user.employeeCode = employeeCode;
+      if (bondStartDate) user.bondStartDate = bondStartDate;
+      if (bondEndDate) user.bondEndDate = bondEndDate;
+      await user.save;
+      return { data: { user }, message: 'Updated Successfully', success: true };
+    } catch (error) {
+      console.error('error in updateUser', error);
+
+      throw new HttpException(error, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  async archiveUser(id: string) {
+    try {
+      const user = await this.userModel.findById(id);
+      user.isDeleted = !user.isDeleted;
+      await user.save();
+    } catch (error) {
+      throw new InternalServerErrorException(error);
+    }
+  }
+
+  async fixUser() {
+    try {
+      const users = await this.userModel.updateMany({}, { dateOfBirth: null });
+      // for (let index = 0; index < users.length; index++) {
+      //   const user = users[index];
+      //   if (user.dateOfBirth && typeof user.dateOfBirth === 'string') {
+      //     // user.dateOfBirth = moment(new Date(user.dateOfBirth));
+      //   }
+      //   await user.save();
+      // }
+    } catch (error) {
+      throw new InternalServerErrorException(error);
+    }
   }
 }

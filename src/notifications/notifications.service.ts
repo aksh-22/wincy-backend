@@ -42,8 +42,8 @@ export class NotificationsService {
     });
 
     req.on('error', function (e) {
-      console.log('ERROR:');
-      console.log(e);
+      console.error('ERROR:');
+      console.error(e);
     });
 
     req.write(JSON.stringify(data));
@@ -117,7 +117,6 @@ export class NotificationsService {
 
   async markNotificationRead(user, orgId, notificationId) {
     try {
-      console.log('user', user);
       const notifications = await this.notiModel
         .updateMany(
           {
@@ -137,7 +136,6 @@ export class NotificationsService {
 
   async markAllNotificationRead(user, orgId) {
     try {
-      console.log('orgId', orgId);
       const notifications = await this.notiModel
         .updateMany(
           {
@@ -163,7 +161,6 @@ export class NotificationsService {
       if (!pageNo) {
         pageNo = 1;
       }
-      console.log('status', status);
       if (status == 'Read') {
         filter = {
           userStatus: { $elemMatch: { user: user._id, isRead: true } },

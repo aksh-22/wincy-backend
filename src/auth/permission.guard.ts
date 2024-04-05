@@ -1,9 +1,9 @@
 import {
-  Injectable,
   CanActivate,
   ExecutionContext,
   HttpException,
   HttpStatus,
+  Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PERMISSION_KEY } from './permission.decorator';
@@ -47,9 +47,8 @@ export class PermissionGuard implements CanActivate {
         }
       }
     });
-
     if (!permitted) {
-      permission = user.permission[params.organisation];
+      permission = user?.permission?.[params.organisation];
       // user?.permission?.forEach((element) => {
       //   if (String(element.organisation) == params.organisation) {
       //     permission = element.permission;

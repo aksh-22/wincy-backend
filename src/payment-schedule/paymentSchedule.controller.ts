@@ -31,7 +31,7 @@ export class paymentScheduleController {
   async getPaymentSchedules(
     @Request() req,
     @Query('projectId') projectId: string,
-    @Query('status') status: PAYMENT_SCHEDULE_STATUS,
+    @Query('status') status: PAYMENT_SCHEDULE_STATUS | any,
     @Query('month') month: number,
     @Query('year') year: number,
     @Query('createdAt') createdAt: string,

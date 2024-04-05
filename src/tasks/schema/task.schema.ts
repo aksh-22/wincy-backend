@@ -1,4 +1,5 @@
 import * as mongoose from 'mongoose';
+import { TASK_STATUS_TYPE } from './task.enum';
 
 export const Sub_TaskSchema = new mongoose.Schema({
   description: {
@@ -55,16 +56,8 @@ export const TaskSchema = new mongoose.Schema(
     platforms: [String],
     status: {
       type: String,
-      enum: [
-        'Completed',
-        'NotStarted',
-        'Active',
-        'OnHold',
-        'WaitingForReview',
-        'UnderReview',
-        'ReviewFailed',
-      ],
-      default: 'NotStarted',
+      enum: TASK_STATUS_TYPE,
+      default: TASK_STATUS_TYPE.NotStarted,
     },
     assigneesStatus: [{ type: AssigneeStatusSchema, default: undefined }],
     // priority: {type: String, enum: ["High", "Medium", "Low"], default: "Medium"},
@@ -89,7 +82,7 @@ export const TaskSchema = new mongoose.Schema(
       select: false,
     },
     attachments: { type: [String] },
-    descriptionUpdatedAt :{type:Date},
+    descriptionUpdatedAt: { type: Date },
   },
   {
     timestamps: true,

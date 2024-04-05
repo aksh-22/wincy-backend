@@ -69,7 +69,6 @@ export class ScheduleController {
     const { user } = req;
     const userId = user._id;
     const id = query;
-    console.log(id);
 
     return this.scheduleService.permitSchedule(id, userId, permitStatus);
   }

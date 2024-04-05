@@ -2,21 +2,20 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
-  NotAcceptableException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import * as moment from 'moment';
+import * as mongoose from 'mongoose';
 import { Model } from 'mongoose';
+import { PAYMENT_SCHEDULE_STATUS } from 'src/payment-schedule/paymentSchedule.enum';
 import { PaymentScheduleModel } from 'src/payment-schedule/schema/paymentSchedule.schema';
 import { ProjectsService } from 'src/projects/projects.service';
 import { UtilsService } from 'src/utils/utils.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
-import { InvoiceModel } from './schema/invoice.schema';
-import { PAYMENT_SCHEDULE_STATUS } from 'src/payment-schedule/paymentSchedule.enum';
-import * as mongoose from 'mongoose';
 import { INVOICE_STATUS } from './enum/status.enum';
+import { InvoiceModel } from './schema/invoice.schema';
 
 @Injectable()
 export class InvoiceService {
@@ -29,54 +28,11 @@ export class InvoiceService {
     private readonly utilsService: UtilsService,
   ) {}
 
+  async getOne(filter) {
+    return await this.InvoiceModel.findOne(filter);
+  }
+
   async getOneInvoice(filter) {
-    const $match = filter;
-
-    const $lookup = [
-      {
-        $lookup: {
-          from: 'projects',
-          localField: 'projectId',
-          foreignField: '_id',
-          as: 'projectId',
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'createBy',
-          foreignField: '_id',
-          as: 'createdBy',
-        },
-      },
-      {
-        $lookup: {
-          from: 'Subsiduary',
-          localField: 'subsiduary',
-          foreignField: '_id',
-          as: 'subsiduary',
-        },
-      },
-      {
-        $lookup: {
-          from: 'Customer',
-          localField: 'customer',
-          foreignField: '_id',
-          as: 'customer',
-        },
-      },
-      {
-        $lookup: {
-          from: 'paymentschedulemodels',
-          localField: 'paymentSchedule',
-          foreignField: '_id',
-          as: 'paymentSchedule',
-        },
-      },
-    ];
-
-    const ags = [{ $match }, ...$lookup];
-
     const invoices = await this.InvoiceModel.findById(filter)
       .populate('customer')
       .populate('paymentSchedule')
@@ -396,6 +352,27 @@ export class InvoiceService {
     return { invoice, amountObj };
   }
 
+  async getAll() {
+    // const invoice = [];
+    // const paymentSchedule = [];
+    const invoice = await this.InvoiceModel.find()
+      .populate('projectId')
+      .populate('subsiduary');
+    for (let index = 0; index < invoice.length; index++) {
+      const element = invoice[index];
+      element.amount = this.utilsService.decryptAmount(element.amount);
+    }
+    const paymentSchedule = await this.PaymentScheduleModel.find();
+    for (let index = 0; index < paymentSchedule.length; index++) {
+      const element = paymentSchedule[index];
+      element.amount = this.utilsService.decryptAmount(element.amount);
+      element.initialAmount = this.utilsService.decryptAmount(
+        element.initialAmount,
+      );
+    }
+    return { invoice, paymentSchedule };
+  }
+
   async getProjectInvoiceData({
     user,
     projectId,
@@ -513,7 +490,6 @@ export class InvoiceService {
         organisation: orgId,
         subsiduary: subsiduaryId,
       };
-      const ins = await this.InvoiceModel.find(query).select('invoiceNumber');
       const invoices = await this.InvoiceModel.findOne(query)
         .sort({ _id: -1 })
         .select('invoiceNumber');

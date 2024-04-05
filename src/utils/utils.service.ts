@@ -1,15 +1,19 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { ConfigService } from 'src/config/config.service';
-import { v1 as uuidv1 } from 'uuid';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import * as AWS from 'aws-sdk';
 import {
   createCipheriv,
   createDecipheriv,
   randomBytes,
   scryptSync,
 } from 'crypto';
-import * as AWS from 'aws-sdk';
 import { ActivitiesService } from 'src/activities/activities.service';
-import e from 'express';
+import { ConfigService } from 'src/config/config.service';
+import { v1 as uuidv1 } from 'uuid';
 
 const secret = ConfigService.keys.ENCRYPTION_SECRET;
 
@@ -17,26 +21,40 @@ const secret = ConfigService.keys.ENCRYPTION_SECRET;
 export class UtilsService {
   constructor(private readonly actsService: ActivitiesService) {}
 
-  async uploadFileS3(file, folder) {
-    const s3 = new AWS.S3({
-      accessKeyId: ConfigService.keys.AWS_ID,
-      secretAccessKey: ConfigService.keys.AWS_SECRET,
-    });
-    let name = file.originalname.split('.');
-    const ext = name[name.length - 1];
-    name = uuidv1().concat('.', ext);
-    const params = {
-      Bucket: ConfigService.keys.AWS_BUCKET_NAME,
-      Key: `${folder}/${name}`,
-      Body: file.buffer,
-      CreateBucketConfiguration: {
-        // Set your region here
-        LocationConstraint: ConfigService.keys.AWS_REGION,
-      },
-      ACL: 'public-read',
+  getMetaData({ page, limit, total }) {
+    return {
+      page,
+      limit,
+      isLast: total < limit,
     };
-    const { Location } = await s3.upload(params).promise();
-    return Location;
+  }
+
+  async uploadFileS3(file, folder) {
+    try {
+      const s3 = new AWS.S3({
+        accessKeyId: ConfigService.keys.AWS_ID,
+        secretAccessKey: ConfigService.keys.AWS_SECRET,
+      });
+      let name = file.originalname.split('.');
+      const ext = name[name.length - 1];
+      name = uuidv1().concat('.', ext);
+      const params = {
+        Bucket: ConfigService.keys.AWS_BUCKET_NAME,
+        Key: `${folder}/${name}`,
+        Body: file.buffer,
+        CreateBucketConfiguration: {
+          // Set your region here
+          LocationConstraint: ConfigService.keys.AWS_REGION,
+        },
+        ACL: 'public-read',
+      };
+      const { Location } = await s3.upload(params).promise();
+      return Location;
+    } catch (error) {
+      console.error('Error in uploadFileS3', error);
+
+      throw new InternalServerErrorException(error);
+    }
   }
 
   async deleteFileS3(url, folder) {
@@ -168,7 +186,6 @@ export class UtilsService {
   async decryptOneNewInvoiceData(invoices: any) {
     invoices.forEach((element, index) => {
       element?.['paymentSchedule']?.forEach((el) => {
-        console.log('el', el);
         el.amount = this.decryptData(el.amount);
       });
 
@@ -610,7 +627,10 @@ export class UtilsService {
   }
 
   isUserProjectManager(managers: any[], user: any) {
-    const projectManagers = managers.map((el) => String(el));
+    if (!managers || managers === null) {
+      return false;
+    }
+    const projectManagers = managers?.map((el) => String(el));
     return projectManagers.includes(String(user));
   }
 

@@ -22,6 +22,8 @@ import { EodModule } from './eod/eod.module';
 import { PaymentSchedule } from './payment-schedule/paymentSchedule.module';
 import { Invoice } from './invoice/invoice.module';
 import { ScheduleModule } from './schedule/schedule.module';
+import { SalaryModule } from './salary-management/salary.module';
+import { BuildDataModule } from './build-data/buildData.module';
 
 @Module({
   imports: [
@@ -45,6 +47,8 @@ import { ScheduleModule } from './schedule/schedule.module';
     PaymentSchedule,
     Invoice,
     ScheduleModule,
+    SalaryModule,
+    BuildDataModule,
   ],
   controllers: [AppController],
   providers: [AppService],

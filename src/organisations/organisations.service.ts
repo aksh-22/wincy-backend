@@ -1,3 +1,4 @@
+import { MailerService } from '@nestjs-modules/mailer';
 import {
   BadRequestException,
   forwardRef,
@@ -5,21 +6,21 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  InternalServerErrorException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
-import * as AWS from 'aws-sdk';
-import { ConfigService } from 'src/config/config.service';
-import { v1 as uuidv1 } from 'uuid';
-import { UsersService } from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
-import { Hierarchy } from 'src/auth/roles.enum';
-import { UtilsService } from 'src/utils/utils.service';
+import { InjectModel } from '@nestjs/mongoose';
 import * as sendgrid from '@sendgrid/mail';
+import { Model, Types } from 'mongoose';
+import { Permission } from 'src/auth/permission.enum';
+import { Hierarchy } from 'src/auth/roles.enum';
+import { ConfigService } from 'src/config/config.service';
 import { ProjectsService } from 'src/projects/projects.service';
+import { UsersService } from 'src/users/users.service';
+import { UtilsService } from 'src/utils/utils.service';
 import { UpdatePermissionDto } from './dto/account.dto';
-import { MailerService } from '@nestjs-modules/mailer';
-import { UpdateCustomerDto } from './dto/customer.dto';
+import { LinkCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
+import { GetTeamDto } from './dto/team.dto';
 
 @Injectable()
 export class OrganisationsService {
@@ -158,8 +159,7 @@ export class OrganisationsService {
       subject: `Invitation to join organization : ${org.name}`,
       html: `Link: ${verificationLink}`,
     });
-    console.log('send', send);
-    await sendgrid.send(msg);
+    // await sendgrid.send(msg);
 
     return {
       message: 'The user has been sucessfully invited!',
@@ -382,12 +382,59 @@ export class OrganisationsService {
 
   //================================================//
 
-  async myTeam(orgId) {
+  async myTeam(orgId, query: GetTeamDto) {
     const org = await this.orgModel.findById(orgId).exec();
-    const users = await this.usersService.getMultUsers(
-      { $or: [{ _id: org.users }, { _id: org.owner }] },
-      { password: 0, createdAt: 0, updatedAt: 0, sessions: 0 },
-    );
+    const {
+      dateOfBirthStart,
+      dateOfBirthEnd,
+      bondEndDateStart,
+      bondEndDateEnd,
+      terminationDateStart,
+      terminationDateEnd,
+      joiningDateStart,
+      joiningDateEnd,
+      isDeleted = false,
+      search,
+    }: any = query || {};
+    const filter = {
+      $or: [{ _id: org.users }, { _id: org.owner }],
+      ...(dateOfBirthStart &&
+        dateOfBirthEnd && {
+          dateOfBirth: {
+            $gte: dateOfBirthStart,
+            $lte: dateOfBirthEnd,
+          },
+        }),
+      ...(bondEndDateStart &&
+        bondEndDateEnd && {
+          dateOfBirth: {
+            $gte: bondEndDateStart,
+            $lte: bondEndDateEnd,
+          },
+        }),
+      ...(terminationDateStart &&
+        terminationDateEnd && {
+          dateOfBirth: {
+            $gte: terminationDateStart,
+            $lte: terminationDateEnd,
+          },
+        }),
+      ...(joiningDateStart &&
+        joiningDateEnd && {
+          dateOfBirth: {
+            $gte: joiningDateStart,
+            $lte: joiningDateEnd,
+          },
+        }),
+      isDeleted,
+      name: { $regex: search, $options: 'i' },
+    };
+    const users = await this.usersService.getMultUsers(filter, {
+      password: 0,
+      createdAt: 0,
+      updatedAt: 0,
+      sessions: 0,
+    });
     for (let i = 0; i < users.length; i++) {
       if (users[i].accountDetails) {
         if (users[i].accountDetails.ifsc) {
@@ -592,7 +639,6 @@ export class OrganisationsService {
 
   async updateCustomer(orgId, customerId, dto: UpdateCustomerDto) {
     try {
-      console.log('dto', dto);
       let customer = await this.customerModel
         .findOne({ _id: customerId, organisation: orgId })
         .exec();
@@ -621,7 +667,6 @@ export class OrganisationsService {
           }
         });
         customer['projects'] = pIds;
-        console.log('customer', JSON.stringify(customer, null, 2));
       }
 
       if (dto.isDelete) {
@@ -632,7 +677,6 @@ export class OrganisationsService {
           }
         });
         customer['projects'] = pIds;
-        console.log('customer', JSON.stringify(customer, null, 2));
       }
 
       customer = await customer.save({ new: true });
@@ -648,6 +692,40 @@ export class OrganisationsService {
       console.error('Error in updateCustomer', error);
 
       throw new BadRequestException(error);
+    }
+  }
+
+  async linkCustomer(orgId: string, body: LinkCustomerDto) {
+    try {
+      let customer;
+      if (body?.customerId) {
+        customer = await this.customerModel.findOne({
+          _id: body.customerId,
+        });
+        customer.projects.push(body.projectId);
+        let p: any = customer.projects.filter(
+          (el, i) => customer.projects.indexOf(el) === i,
+        );
+        customer.projects = p;
+        await customer.save();
+      }
+      if (body?.customerIdToRemove) {
+        const customerToRemove = await this.customerModel.findOne({
+          _id: body.customerIdToRemove,
+        });
+        const i = customerToRemove.projects.indexOf(body?.projectId);
+        if (i > -1) {
+          customerToRemove.projects.splice(i, 1);
+          await customerToRemove.save();
+        }
+      }
+      return {
+        data: { customer },
+        success: true,
+        message: 'Customer linked successfully.',
+      };
+    } catch (error) {
+      throw new InternalServerErrorException(error);
     }
   }
 
@@ -797,9 +875,17 @@ export class OrganisationsService {
     const otherUserId = dto.user;
     const user = await this.usersService.getUser({ _id: otherUserId });
     user.permission = { ...user.permission, [orgId]: dto.permissions };
-
     user.save();
-
     return { data: user, success: true, message: '' };
+  }
+
+  async permissionList() {
+    return {
+      data: {
+        list: Object.values(Permission),
+      },
+      success: true,
+      message: '',
+    };
   }
 }

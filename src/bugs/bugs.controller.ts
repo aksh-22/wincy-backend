@@ -52,7 +52,6 @@ export class BugsController {
     @Param('project') projectId: string,
     @Body() body,
   ) {
-    console.log('body', body);
     const { user } = req;
     return await this.bugsService.createBug(user, body, projectId, attachments);
   }
@@ -96,15 +95,12 @@ export class BugsController {
     @Query() query: any,
   ) {
     const { user } = req;
-    const { platform, pageSize, pageNo } = query;
-    return await this.bugsService.getProjectBugs(
+    return await this.bugsService.getProjectBugs({
       user,
       projectId,
       orgId,
-      platform,
-      pageSize,
-      pageNo,
-    );
+      ...query,
+    });
   }
 
   //=============================================//

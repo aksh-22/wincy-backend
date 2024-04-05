@@ -30,6 +30,7 @@ import { CreateOrganisationDto } from './dto/createOrg.dto';
 import {
   AddCustomerDto,
   DeleteCustomersDto,
+  LinkCustomerDto,
   UpdateCustomerDto,
 } from './dto/customer.dto';
 import { SendInvitationDto } from './dto/sendInvitation.dto';
@@ -41,6 +42,7 @@ import {
 import { UpdateOrganisationDto } from './dto/updateOrg.dto';
 import { updateRoleDto } from './dto/updateRole.dto';
 import { OrganisationsService } from './organisations.service';
+import { GetTeamDto } from './dto/team.dto';
 
 @Controller('organisations')
 export class OrganisationsController {
@@ -56,6 +58,13 @@ export class OrganisationsController {
     @Body() dto: UpdatePermissionDto,
   ) {
     return await this.organisationsService.permissionManager(orgId, dto);
+  }
+
+  // @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Get('admin/permission-list/:organisation')
+  // @Permissions(Permission.GIVE_PERMISSION)
+  async permissionList(@Param('organisation') orgId: string) {
+    return await this.organisationsService.permissionList();
   }
 
   //Tested
@@ -141,8 +150,11 @@ export class OrganisationsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('team/:organisation')
-  async getTeam(@Param('organisation') orgId: string) {
-    return await this.organisationsService.myTeam(orgId);
+  async getTeam(
+    @Param('organisation') orgId: string,
+    @Query() query: GetTeamDto,
+  ) {
+    return await this.organisationsService.myTeam(orgId, query);
   }
 
   //==========================================//
@@ -315,6 +327,13 @@ export class OrganisationsController {
       customerId,
       dto,
     );
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Post('link-project/:organisation')
+  @Permissions(Permission.CREATE_INVOICE)
+  async linkCustomer(@Param('organisation') orgId: string, @Body() body) {
+    return await this.organisationsService.linkCustomer(orgId, body);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

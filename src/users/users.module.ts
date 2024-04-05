@@ -9,11 +9,13 @@ import { PasswordResetSchema } from './schema/passwordReset.schema';
 import { UserSchema } from './schema/user.schema';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
+import { SalaryModule } from 'src/salary-management/salary.module';
 
 @Module({
   imports: [
     SystemModule,
     UtilsModule,
+    SalaryModule,
     forwardRef(() => OrganisationsModule),
     MongooseModule.forFeature([
       { name: 'User', schema: UserSchema },

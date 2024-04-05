@@ -23,87 +23,7 @@ export class EodService {
     @InjectModel('Project') private readonly projectModel: Model<any>,
   ) {}
 
-  // async create(createEodDto: CreateEodDto, userId: any) {
-  //   try {
-  //     const currentDate = new Date();
-  //     currentDate.setHours(0, 0, 0, 0);
-  //     const eod = await this.EodModel.find({
-  //       createdBy: new ObjectId(userId),
-  //       createdAt: {
-  //         $gte: currentDate,
-  //         $lt: new Date(currentDate.getTime() + 24 * 60 * 60 * 1000),
-  //       },
-  //     });
-  //     console.log('eod', eod);
-
-  //     let hour = 0;
-  //     let minute = 0;
-
-  //     createEodDto.data.forEach((el) => {
-  //       console.log('el', el);
-  //       hour += el.duration.hour;
-  //       minute += el.duration.min / 60;
-  //     });
-
-  //     console.log('hour', hour);
-  //     console.log('minute', minute);
-
-  //     for (let i = 0; i < eod.length; i++) {
-  //       console.log('eod[i]', eod[i]);
-  //       hour += eod[i].duration.hour;
-  //       minute += eod[i].duration.min / 60;
-  //     }
-  //     console.log('hour---', hour);
-  //     console.log('minute---', minute);
-
-  //     const total = hour + minute;
-  //     console.log('total', total);
-
-  //     if (total <= 24) {
-  //       for (let i = 0; i < createEodDto.data.length; i++) {
-  //         const { project, description, duration, screenName } =
-  //           createEodDto.data[i];
-
-  //         const model = new this.EodModel();
-  //         const getProject = await this.projectModel.findById(
-  //           new ObjectId(project),
-  //         );
-  //         if (!getProject) {
-  //           throw new HttpException(
-  //             'Invalid Project Id',
-  //             HttpStatus.BAD_REQUEST,
-  //           );
-  //         }
-  //         const projectId = getProject._id;
-  //         model.project = projectId;
-  //         model.description = description;
-  //         model.screenName = screenName;
-  //         if (!(duration.min <= 60))
-  //           throw new HttpException(
-  //             'Minutes should be less or equal to 60 min',
-  //             HttpStatus.BAD_REQUEST,
-  //           );
-  //         model.duration = duration;
-  //         model.createdBy = userId;
-  //         const userEod = await model.save();
-  //       }
-
-  //       return {
-  //         success: true,
-  //         message: 'Eod added successfully.',
-  //       };
-  //     } else {
-  //       throw new HttpException(
-  //         'You can not add data more than 24 hours',
-  //         HttpStatus.BAD_REQUEST,
-  //       );
-  //     }
-  //   } catch (error) {
-  //     throw error;
-  //   }
-  // }
-
-  async create(createEodDto: CreateEodDto, userId: any) {
+  async create(createEodDto: CreateEodDto, userId: any, userType: string) {
     try {
       const currentDate = new Date();
       currentDate.setHours(0, 0, 0, 0);
@@ -136,17 +56,36 @@ export class EodService {
             createEodDto.data[i];
 
           const model = new this.EodModel();
-          const getProject = await this.projectModel.findById(
-            new ObjectId(project),
-          );
-          if (!getProject) {
-            throw new HttpException(
-              'Invalid Project Id',
-              HttpStatus.BAD_REQUEST,
-            );
+
+          if (userType === 'Member') {
+            const getProject = await this.projectModel.findOne({
+              _id: new ObjectId(project),
+              team: { $in: new ObjectId(userId) },
+            });
+            if (!getProject) {
+              throw new HttpException(
+                'Invalid Project Id',
+                HttpStatus.BAD_REQUEST,
+              );
+            }
+          } else if (userType === 'Member+') {
+            const getProject = await this.projectModel.findOne({
+              _id: new ObjectId(project),
+              // team: { $in: new ObjectId(userId) },
+              $or: [
+                { projectManagers: { $in: new ObjectId(userId) } },
+                { team: { $in: new ObjectId(userId) } },
+              ],
+            });
+            if (!getProject) {
+              throw new HttpException(
+                'Invalid Project Id',
+                HttpStatus.BAD_REQUEST,
+              );
+            }
           }
-          const projectId = getProject._id;
-          model.project = projectId;
+
+          model.project = new ObjectId(project);
           model.description = description;
           model.screenName = screenName;
           if (!(duration.min <= 60))
@@ -179,78 +118,20 @@ export class EodService {
     }
   }
 
-  // async showEod(userId: any, query: Query) {
-  //   try {
-  //     const resPerPage = 10;
-  //     const currentPage = Number(query.page) || 1;
-  //     const skip = resPerPage * (currentPage - 1);
-
-  //     const eodDetail = await this.EodModel.aggregate([
-  //       {
-  //         $match: {
-  //           createdBy: userId,
-  //         },
-  //       },
-  //       { $sort: { _id: -1 } },
-  //       { $limit: skip + resPerPage },
-  //       { $skip: skip },
-
-  //       {
-  //         $lookup: {
-  //           from: 'projects',
-  //           localField: 'project',
-  //           foreignField: '_id',
-  //           as: 'project_detail',
-  //         },
-  //       },
-
-  //       {
-  //         $unwind: '$project_detail',
-  //       },
-
-  //       {
-  //         $project: {
-  //           _id: 1,
-  //           description: 1,
-  //           duration: 1,
-  //           screenName: 1,
-  //           createdAt: 1,
-
-  //           'project_detail._id': 1,
-  //           'project_detail.title': 1,
-  //         },
-  //       },
-
-  //       {
-  //         $group: {
-  //           _id: {
-  //             month: { $month: '$createdAt' },
-  //             day: { $dayOfMonth: '$createdAt' },
-  //             year: { $year: '$createdAt' },
-  //           },
-  //           eodDetail: { $push: '$$ROOT' },
-  //         },
-  //       },
-  //       { $sort: { _id: -1 } },
-  //     ]);
-
-  //     return {
-  //       success: true,
-
-  //       data: { eodDetail },
-  //     };
-  //   } catch (error) {
-  //     throw error;
-  //   }
-  // }
-
-  async showEod12(userId: any, query, startDate, endDate, projectId) {
+  async showEod(
+    userId: any,
+    userType: string,
+    query,
+    startDate,
+    endDate,
+    projectId,
+    member,
+    search,
+  ) {
     try {
       const resPerPage = 10;
       const currentPage = Number(query.page) || 1;
       const skip = resPerPage * (currentPage - 1);
-      console.log('userId', userId);
-      let countFilter = { createdBy: new ObjectId(userId) };
 
       const ags: any[] = [
         {
@@ -266,6 +147,17 @@ export class EodService {
             path: '$project_detail',
           },
         },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'createdBy',
+            foreignField: '_id',
+            as: 'user_detail',
+          },
+        },
+        {
+          $unwind: '$user_detail',
+        },
 
         {
           $project: {
@@ -275,331 +167,296 @@ export class EodService {
             screenName: 1,
             project: 1,
             createdAt: 1,
+            createdBy: 1,
 
             'project_detail._id': 1,
             'project_detail.title': 1,
+
+            'user_detail._id': 1,
+            'user_detail.name': 1,
+            'user_detail.profilePicture': 1,
           },
         },
       ];
-      console.log('ags', ags);
 
-      ags.push({ $match: countFilter });
+      if (userType === 'Member') {
+        let filterProject = [];
+
+        if (projectId) {
+          filterProject = projectId.map((val) => {
+            return new ObjectId(val);
+          });
+        } else {
+          filterProject = await this.projectModel.distinct('_id', {
+            team: { $in: userId },
+          });
+        }
+
+        const countFilter = { project: { $in: filterProject } };
+        if (projectId && member && startDate && endDate) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (projectId && startDate && endDate) {
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (member && startDate && endDate) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (startDate && endDate) {
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (projectId && member) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+        } else if (member) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+        } else if (search) {
+          countFilter['screenName'] = { $regex: search, $options: 'i' };
+        }
+        ags.push({ $match: countFilter });
+      } else if (userType === 'Member+') {
+        let filterProject = [];
+
+        if (projectId) {
+          filterProject = projectId.map((val) => {
+            return new ObjectId(val);
+          });
+        } else {
+          filterProject = await this.projectModel.distinct('_id', {
+            team: { $in: userId },
+          });
+        }
+
+        const countFilter = { project: { $in: filterProject } };
+        if (projectId && member && startDate && endDate) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (projectId && startDate && endDate) {
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (member && startDate && endDate) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (startDate && endDate) {
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (projectId && member) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+        } else if (member) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+        }
+        ags.push({ $match: countFilter });
+      } else {
+        const countFilter = {};
+        if (projectId && member && startDate && endDate) {
+          const project = projectId;
+          const filterProject = project.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['project'] = { $in: filterProject };
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (projectId && startDate && endDate) {
+          const project = projectId;
+          const filterProject = project.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['project'] = { $in: filterProject };
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (member && startDate && endDate) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (startDate && endDate) {
+          const date1 = new Date(startDate);
+          const date2 = new Date(endDate);
+          date2.setHours(23, 59, 59, 999);
+          countFilter['createdAt'] = {
+            $gte: date1,
+            $lte: date2,
+          };
+        } else if (projectId && member) {
+          const project = projectId;
+          const filterProject = project.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['project'] = { $in: filterProject };
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+        } else if (member) {
+          const user = member;
+          const filterUser = user.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['user_detail._id'] = { $in: filterUser };
+        } else if (projectId) {
+          const project = projectId;
+          const filterProject = project.map((val) => {
+            return new ObjectId(val);
+          });
+          countFilter['project'] = { $in: filterProject };
+        } else if (search) {
+          countFilter['screenName'] = { $regex: search, $options: 'i' };
+        }
+        ags.push({ $match: countFilter });
+      }
       const eodDetail = await this.EodModel.aggregate(ags)
         .sort({ _id: -1 })
         .skip(skip)
-        .limit(skip + resPerPage)
-        .group({
-          _id: {
-            month: { $month: '$createdAt' },
-            day: { $dayOfMonth: '$createdAt' },
-            year: { $year: '$createdAt' },
-          },
-          eodDetail: { $push: '$$ROOT' },
-        });
+        .limit(skip + resPerPage);
 
-      console.log('count', eodDetail.length);
+      ags.push({
+        $count: 'totalCount',
+      });
+
+      const count = await this.EodModel.aggregate(ags);
+
+      const countt = count?.[0]?.totalCount;
+      const totalPages = Math.ceil(countt / resPerPage);
+      const hasNextPage = currentPage < totalPages;
+      const hasPreviousPage = currentPage > 1;
+
       return {
         success: true,
-
-        data: { eodDetail },
+        data: {
+          totalPages,
+          currentPage,
+          hasNextPage,
+          hasPreviousPage,
+          eodDetail,
+        },
       };
     } catch (error) {
       throw error;
     }
   }
 
-  async showEod(userId: any, query, startDate, endDate, projectId) {
+  async update(userId: string, userType: string, updateEodDto: UpdateEodDto) {
     try {
-      const resPerPage = 10;
-      const currentPage = Number(query.page) || 1;
-      const skip = resPerPage * (currentPage - 1);
-      const count = await this.EodModel.countDocuments();
-      const totalPages = Math.ceil(count / resPerPage);
-      const hasNextPage = currentPage < totalPages;
-      const hasPreviousPage = currentPage > 1;
-
-      if (startDate && endDate && projectId) {
-        const date1 = new Date(startDate);
-        const date2 = new Date(endDate);
-        date2.setHours(23, 59, 59, 999);
-        const project = projectId;
-        const filterProject = [];
-        project.map((val) => {
-          filterProject.push(new ObjectId(val));
+      let data;
+      if (userType === 'Admin') {
+        data = await this.EodModel.findOne({
+          _id: updateEodDto.eodId,
         });
-        const eodDetail = await this.EodModel.aggregate([
-          {
-            $match: {
-              createdBy: userId,
-              createdAt: {
-                $gte: date1,
-                $lte: date2,
-              },
-              project: { $in: filterProject },
-            },
-          },
-          { $sort: { _id: -1 } },
-          { $limit: skip + resPerPage },
-          { $skip: skip },
-
-          {
-            $lookup: {
-              from: 'projects',
-              localField: 'project',
-              foreignField: '_id',
-              as: 'project_detail',
-            },
-          },
-
-          {
-            $unwind: '$project_detail',
-          },
-
-          {
-            $project: {
-              _id: 1,
-              description: 1,
-              duration: 1,
-              screenName: 1,
-              createdAt: 1,
-
-              'project_detail._id': 1,
-              'project_detail.title': 1,
-            },
-          },
-
-          {
-            $group: {
-              _id: {
-                month: { $month: '$createdAt' },
-                day: { $dayOfMonth: '$createdAt' },
-                year: { $year: '$createdAt' },
-              },
-              eodDetail: { $push: '$$ROOT' },
-            },
-          },
-          { $sort: { _id: -1 } },
-        ]);
-
-        return {
-          success: true,
-
-          data: {
-            totalPages,
-            currentPage,
-            hasNextPage,
-            hasPreviousPage,
-            eodDetail,
-          },
-        };
-      } else if (startDate && endDate) {
-        const date1 = new Date(startDate);
-        const date2 = new Date(endDate);
-        date2.setHours(23, 59, 59, 999);
-        const eodDetail = await this.EodModel.aggregate([
-          {
-            $match: {
-              createdBy: userId,
-              createdAt: {
-                $gte: date1,
-                $lte: date2,
-              },
-            },
-          },
-          { $sort: { _id: -1 } },
-          { $limit: skip + resPerPage },
-          { $skip: skip },
-
-          {
-            $lookup: {
-              from: 'projects',
-              localField: 'project',
-              foreignField: '_id',
-              as: 'project_detail',
-            },
-          },
-
-          {
-            $unwind: '$project_detail',
-          },
-
-          {
-            $project: {
-              _id: 1,
-              description: 1,
-              duration: 1,
-              screenName: 1,
-              createdAt: 1,
-
-              'project_detail._id': 1,
-              'project_detail.title': 1,
-            },
-          },
-
-          {
-            $group: {
-              _id: {
-                month: { $month: '$createdAt' },
-                day: { $dayOfMonth: '$createdAt' },
-                year: { $year: '$createdAt' },
-              },
-              eodDetail: { $push: '$$ROOT' },
-            },
-          },
-          { $sort: { _id: -1 } },
-        ]);
-
-        return {
-          success: true,
-
-          data: {
-            totalPages,
-            currentPage,
-            hasNextPage,
-            hasPreviousPage,
-            eodDetail,
-          },
-        };
-      } else if (projectId) {
-        const project = projectId;
-        const filterProject = [];
-        project.map((val) => {
-          filterProject.push(new ObjectId(val));
+      } else if (userType === 'Member++') {
+        data = await this.EodModel.findOne({
+          _id: updateEodDto.eodId,
         });
-        const eodDetail = await this.EodModel.aggregate([
-          {
-            $match: {
-              createdBy: userId,
-              project: { $in: filterProject },
-            },
-          },
-          { $sort: { _id: -1 } },
-          { $limit: skip + resPerPage },
-          { $skip: skip },
-
-          {
-            $lookup: {
-              from: 'projects',
-              localField: 'project',
-              foreignField: '_id',
-              as: 'project_detail',
-            },
-          },
-
-          {
-            $unwind: '$project_detail',
-          },
-
-          {
-            $project: {
-              _id: 1,
-              description: 1,
-              duration: 1,
-              screenName: 1,
-              createdAt: 1,
-
-              'project_detail._id': 1,
-              'project_detail.title': 1,
-            },
-          },
-
-          {
-            $group: {
-              _id: {
-                month: { $month: '$createdAt' },
-                day: { $dayOfMonth: '$createdAt' },
-                year: { $year: '$createdAt' },
-              },
-              eodDetail: { $push: '$$ROOT' },
-            },
-          },
-          { $sort: { _id: -1 } },
-        ]);
-
-        return {
-          success: true,
-
-          data: {
-            totalPages,
-            currentPage,
-            hasNextPage,
-            hasPreviousPage,
-            eodDetail,
-          },
-        };
       } else {
-        const eodDetail = await this.EodModel.aggregate([
-          {
-            $match: {
-              createdBy: userId,
-            },
-          },
-          { $sort: { _id: -1 } },
-          { $limit: skip + resPerPage },
-          { $skip: skip },
-
-          {
-            $lookup: {
-              from: 'projects',
-              localField: 'project',
-              foreignField: '_id',
-              as: 'project_detail',
-            },
-          },
-
-          {
-            $unwind: '$project_detail',
-          },
-
-          {
-            $project: {
-              _id: 1,
-              description: 1,
-              duration: 1,
-              screenName: 1,
-              createdAt: 1,
-
-              'project_detail._id': 1,
-              'project_detail.title': 1,
-            },
-          },
-
-          {
-            $group: {
-              _id: {
-                month: { $month: '$createdAt' },
-                day: { $dayOfMonth: '$createdAt' },
-                year: { $year: '$createdAt' },
-              },
-              eodDetail: { $push: '$$ROOT' },
-            },
-          },
-          { $sort: { _id: -1 } },
-        ]);
-
-        return {
-          success: true,
-
-          data: {
-            totalPages,
-            currentPage,
-            hasNextPage,
-            hasPreviousPage,
-            eodDetail,
-          },
-        };
+        data = await this.EodModel.findOne({
+          createdBy: userId,
+          _id: updateEodDto.eodId,
+        });
       }
-    } catch (error) {
-      throw error;
-    }
-  }
 
-  async update(userId: string, updateEodDto: UpdateEodDto) {
-    try {
-      const data = await this.EodModel.findOne({
-        createdBy: userId,
-        _id: updateEodDto.eodId,
-      });
+      // const data = await this.EodModel.findOne({
+      //   createdBy: userId,
+      //   _id: updateEodDto.eodId,
+      // });
+
       if (!data) {
         throw new UnauthorizedException('No Data found for this user');
       }
@@ -646,6 +503,9 @@ export class EodService {
 
         if (updateEodDto.screenName) data.screenName = updateEodDto.screenName;
 
+        data.updatedBy = new ObjectId(userId);
+        data.lastUpdated = new Date();
+
         const updateEod = await data.save();
         return {
           success: true,
@@ -663,17 +523,209 @@ export class EodService {
     }
   }
 
+  // async allEodUpdates(query, startDate, endDate, projectId, member) {
+  //   try {
+  //     const resPerPage = 10;
+  //     const currentPage = Number(query.page) || 1;
+
+  //     const skip = resPerPage * (currentPage - 1);
+
+  //     let countFilter = {};
+
+  //     const ags: any[] = [
+  //       {
+  //         $lookup: {
+  //           from: 'projects',
+  //           localField: 'project',
+  //           foreignField: '_id',
+  //           as: 'project_detail',
+  //         },
+  //       },
+  //       {
+  //         $unwind: {
+  //           path: '$project_detail',
+  //         },
+  //       },
+  //       {
+  //         $lookup: {
+  //           from: 'users',
+  //           localField: 'createdBy',
+  //           foreignField: '_id',
+  //           as: 'user_detail',
+  //         },
+  //       },
+  //       {
+  //         $unwind: '$user_detail',
+  //       },
+
+  //       {
+  //         $project: {
+  //           _id: 1,
+  //           description: 1,
+  //           duration: 1,
+  //           screenName: 1,
+  //           project: 1,
+  //           createdAt: 1,
+
+  //           'project_detail._id': 1,
+  //           'project_detail.title': 1,
+  //           'user_detail._id': 1,
+  //           'user_detail.name': 1,
+  //           'user_detail.profilePicture': 1,
+  //         },
+  //       },
+  //     ];
+
+  //     if (startDate && endDate && projectId && member) {
+  //       const date1 = new Date(startDate);
+  //       const date2 = new Date(endDate);
+  //       date2.setHours(23, 59, 59, 999);
+  //       const project = projectId;
+  //       const filterProject = [];
+  //       project.map((val) => {
+  //         filterProject.push(new ObjectId(val));
+  //       });
+  //       const user = member;
+  //       const filterUser = [];
+  //       user.map((val) => {
+  //         filterUser.push(new ObjectId(val));
+  //       });
+  //       countFilter = {
+  //         createdAt: {
+  //           $gte: date1,
+  //           $lte: date2,
+  //         },
+  //         project: { $in: filterProject },
+  //         'user_detail._id': { $in: filterUser },
+  //       };
+  //     } else if (startDate && endDate && member) {
+  //       const date1 = new Date(startDate);
+  //       const date2 = new Date(endDate);
+  //       date2.setHours(23, 59, 59, 999);
+  //       const user = member;
+  //       const filterUser = [];
+  //       user.map((val) => {
+  //         filterUser.push(new ObjectId(val));
+  //       });
+  //       countFilter = {
+  //         createdAt: {
+  //           $gte: date1,
+  //           $lte: date2,
+  //         },
+  //         'user_detail._id': { $in: filterUser },
+  //       };
+  //     } else if (startDate && endDate && projectId) {
+  //       const date1 = new Date(startDate);
+  //       const date2 = new Date(endDate);
+  //       date2.setHours(23, 59, 59, 999);
+  //       const project = projectId;
+  //       const filterProject = [];
+  //       project.map((val) => {
+  //         filterProject.push(new ObjectId(val));
+  //       });
+  //       countFilter = {
+  //         createdAt: {
+  //           $gte: date1,
+  //           $lte: date2,
+  //         },
+  //         project: { $in: filterProject },
+  //       };
+  //     } else if (projectId && member) {
+  //       const project = projectId;
+  //       const filterProject = [];
+  //       project.map((val) => {
+  //         filterProject.push(new ObjectId(val));
+  //       });
+  //       const user = member;
+  //       const filterUser = [];
+  //       user.map((val) => {
+  //         filterUser.push(new ObjectId(val));
+  //       });
+  //       countFilter = {
+  //         project: { $in: filterProject },
+  //         'user_detail._id': { $in: filterUser },
+  //       };
+  //     } else if (startDate && endDate) {
+  //       const date1 = new Date(startDate);
+  //       const date2 = new Date(endDate);
+  //       date2.setHours(23, 59, 59, 999);
+  //       countFilter = {
+  //         createdAt: {
+  //           $gte: date1,
+  //           $lte: date2,
+  //         },
+  //       };
+  //     } else if (projectId) {
+  //       const project = projectId;
+  //       const filterProject = [];
+  //       project.map((val) => {
+  //         filterProject.push(new ObjectId(val));
+  //       });
+  //       countFilter = {
+  //         project: { $in: filterProject },
+  //       };
+  //     } else if (member) {
+  //       const user = member;
+  //       const filterUser = [];
+  //       user.map((val) => {
+  //         filterUser.push(new ObjectId(val));
+  //       });
+  //       countFilter = {
+  //         'user_detail._id': { $in: filterUser },
+  //       };
+  //     }
+
+  //     ags.push({ $match: countFilter });
+
+  //     const eodDetail = await this.EodModel.aggregate(ags)
+  //       .sort({ _id: -1 })
+  //       // .sort({ createdAt: -1 })
+  //       .skip(skip)
+  //       .limit(skip + resPerPage)
+  //       .group({
+  //         _id: {
+  //           month: { $month: '$createdAt' },
+  //           day: { $dayOfMonth: '$createdAt' },
+  //           year: { $year: '$createdAt' },
+  //         },
+  //         eodDetail: { $push: '$$ROOT' },
+  //       })
+  //       .sort({
+  //         '_id.year': -1,
+  //         '_id.month': -1,
+  //         '_id.day': -1,
+  //       });
+  //     ags.push({
+  //       $count: 'totalCount',
+  //     });
+
+  //     const count = await this.EodModel.aggregate(ags);
+  //     const countt = count?.[0]?.totalCount;
+  //     const totalPages = Math.ceil(countt / resPerPage);
+  //     const hasNextPage = currentPage < totalPages;
+  //     const hasPreviousPage = currentPage > 1;
+
+  //     return {
+  //       success: true,
+  //       data: {
+  //         totalPages,
+  //         currentPage,
+  //         hasNextPage,
+  //         hasPreviousPage,
+  //         eodDetail,
+  //       },
+  //     };
+  //   } catch (error) {
+  //     throw error;
+  //   }
+  // }
+
   async allEodUpdates(query, startDate, endDate, projectId, member) {
     try {
       const resPerPage = 10;
       const currentPage = Number(query.page) || 1;
 
       const skip = resPerPage * (currentPage - 1);
-
-      // const count = await this.EodModel.countDocuments();
-      // const totalPages = Math.ceil(count / resPerPage);
-      // const hasNextPage = currentPage < totalPages;
-      // const hasPreviousPage = currentPage > 1;
 
       let countFilter = {};
 
@@ -726,14 +778,12 @@ export class EodService {
         const date2 = new Date(endDate);
         date2.setHours(23, 59, 59, 999);
         const project = projectId;
-        const filterProject = [];
-        project.map((val) => {
-          filterProject.push(new ObjectId(val));
+        const filterProject = project.map((val) => {
+          return new ObjectId(val);
         });
         const user = member;
-        const filterUser = [];
-        user.map((val) => {
-          filterUser.push(new ObjectId(val));
+        const filterUser = user.map((val) => {
+          return new ObjectId(val);
         });
         countFilter = {
           createdAt: {
@@ -748,9 +798,8 @@ export class EodService {
         const date2 = new Date(endDate);
         date2.setHours(23, 59, 59, 999);
         const user = member;
-        const filterUser = [];
-        user.map((val) => {
-          filterUser.push(new ObjectId(val));
+        const filterUser = user.map((val) => {
+          return new ObjectId(val);
         });
         countFilter = {
           createdAt: {
@@ -764,9 +813,8 @@ export class EodService {
         const date2 = new Date(endDate);
         date2.setHours(23, 59, 59, 999);
         const project = projectId;
-        const filterProject = [];
-        project.map((val) => {
-          filterProject.push(new ObjectId(val));
+        const filterProject = project.map((val) => {
+          return new ObjectId(val);
         });
         countFilter = {
           createdAt: {
@@ -777,14 +825,12 @@ export class EodService {
         };
       } else if (projectId && member) {
         const project = projectId;
-        const filterProject = [];
-        project.map((val) => {
-          filterProject.push(new ObjectId(val));
+        const filterProject = project.map((val) => {
+          return new ObjectId(val);
         });
         const user = member;
-        const filterUser = [];
-        user.map((val) => {
-          filterUser.push(new ObjectId(val));
+        const filterUser = user.map((val) => {
+          return new ObjectId(val);
         });
         countFilter = {
           project: { $in: filterProject },
@@ -802,18 +848,17 @@ export class EodService {
         };
       } else if (projectId) {
         const project = projectId;
-        const filterProject = [];
-        project.map((val) => {
-          filterProject.push(new ObjectId(val));
+        const filterProject = project.map((val) => {
+          return new ObjectId(val);
         });
+
         countFilter = {
           project: { $in: filterProject },
         };
       } else if (member) {
         const user = member;
-        const filterUser = [];
-        user.map((val) => {
-          filterUser.push(new ObjectId(val));
+        const filterUser = user.map((val) => {
+          return new ObjectId(val);
         });
         countFilter = {
           'user_detail._id': { $in: filterUser },
@@ -826,20 +871,20 @@ export class EodService {
         .sort({ _id: -1 })
         // .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(skip + resPerPage)
-        .group({
-          _id: {
-            month: { $month: '$createdAt' },
-            day: { $dayOfMonth: '$createdAt' },
-            year: { $year: '$createdAt' },
-          },
-          eodDetail: { $push: '$$ROOT' },
-        })
-        .sort({
-          '_id.year': -1,
-          '_id.month': -1,
-          '_id.day': -1,
-        });
+        .limit(skip + resPerPage);
+      // .group({
+      //   _id: {
+      //     month: { $month: '$createdAt' },
+      //     day: { $dayOfMonth: '$createdAt' },
+      //     year: { $year: '$createdAt' },
+      //   },
+      //   eodDetail: { $push: '$$ROOT' },
+      // })
+      // .sort({
+      //   '_id.year': -1,
+      //   '_id.month': -1,
+      //   '_id.day': -1,
+      // });
       ags.push({
         $count: 'totalCount',
       });
@@ -865,45 +910,195 @@ export class EodService {
     }
   }
 
-  async delete(id, userId) {
+  async delete(id, userId, userType) {
     try {
-      const data = await this.EodModel.findOneAndDelete({
-        _id: id,
-        createdBy: userId,
-      });
-      if (!data) {
-        throw new HttpException('No Data found', HttpStatus.BAD_REQUEST);
+      let data;
+      if (userType === 'Admin') {
+        data = await this.EodModel.findOneAndDelete({
+          _id: id,
+        });
+      } else if (userType === 'Member++') {
+        data = await this.EodModel.findOneAndDelete({
+          _id: id,
+        });
+      } else {
+        await this.EodModel.findOneAndDelete({
+          _id: id,
+          createdBy: userId,
+        });
       }
+      // const data = await this.EodModel.findOneAndDelete({
+      //   _id: id,
+      //   createdBy: userId,
+      // });
+
+      // if (!data) {
+      //   throw new HttpException('No Data found', HttpStatus.BAD_REQUEST);
+      // }
       return { status: 'success', message: 'Eod deleted succesfully' };
     } catch (error) {
       throw error;
     }
   }
 
-  async todayEod(userId) {
-    try {
-      const currentDate = new Date();
-      currentDate.setHours(0, 0, 0, 0);
-      const eod = await this.EodModel.find({
-        createdBy: new ObjectId(userId),
-        createdAt: {
-          $gte: currentDate,
-          $lt: new Date(currentDate.getTime() + 24 * 60 * 60 * 1000),
-        },
-      });
+  // async showEod(
+  //   userId: any,
+  //   userType: string,
+  //   query,
+  //   startDate,
+  //   endDate,
+  //   projectId,
+  //   member,
+  // ) {
+  //   try {
+  //     const resPerPage = 10;
+  //     const currentPage = Number(query.page) || 1;
+  //     const skip = resPerPage * (currentPage - 1);
 
-      let hour = 0;
-      let minute = 0;
+  //     const ags: any[] = [
+  //       {
+  //         $lookup: {
+  //           from: 'projects',
+  //           localField: 'project',
+  //           foreignField: '_id',
+  //           as: 'project_detail',
+  //         },
+  //       },
+  //       {
+  //         $unwind: {
+  //           path: '$project_detail',
+  //         },
+  //       },
+  //       {
+  //         $lookup: {
+  //           from: 'users',
+  //           localField: 'createdBy',
+  //           foreignField: '_id',
+  //           as: 'user_detail',
+  //         },
+  //       },
+  //       {
+  //         $unwind: '$user_detail',
+  //       },
 
-      for (let i = 0; i < eod.length; i++) {
-        hour += eod[i].duration.hour;
-        minute += eod[i].duration.min / 60;
-      }
-      const total = hour + minute;
+  //       {
+  //         $project: {
+  //           _id: 1,
+  //           description: 1,
+  //           duration: 1,
+  //           screenName: 1,
+  //           project: 1,
+  //           createdAt: 1,
+  //           createdBy: 1,
 
-      return { totalTime: total };
-    } catch (error) {
-      throw error;
-    }
-  }
+  //           'project_detail._id': 1,
+  //           'project_detail.title': 1,
+
+  //           'user_detail._id': 1,
+  //           'user_detail.name': 1,
+  //           'user_detail.profilePicture': 1,
+  //         },
+  //       },
+  //     ];
+
+  //     let filterProject = [];
+
+  //     if (projectId) {
+  //       filterProject = projectId.map((val) => {
+  //         return new ObjectId(val);
+  //       });
+  //     } else {
+  //       filterProject = await this.projectModel.distinct('_id', {
+  //         team: { $in: userId },
+  //       });
+  //     }
+
+  //     const countFilter = { project: { $in: filterProject } };
+  //     if (projectId && member && startDate && endDate) {
+  //       const user = member;
+  //       const filterUser = user.map((val) => {
+  //         return new ObjectId(val);
+  //       });
+  //       countFilter['user_detail._id'] = { $in: filterUser };
+  //       const date1 = new Date(startDate);
+  //       const date2 = new Date(endDate);
+  //       date2.setHours(23, 59, 59, 999);
+  //       countFilter['createdAt'] = {
+  //         $gte: date1,
+  //         $lte: date2,
+  //       };
+  //     } else if (projectId && startDate && endDate) {
+  //       const date1 = new Date(startDate);
+  //       const date2 = new Date(endDate);
+  //       date2.setHours(23, 59, 59, 999);
+  //       countFilter['createdAt'] = {
+  //         $gte: date1,
+  //         $lte: date2,
+  //       };
+  //     } else if (member && startDate && endDate) {
+  //       const user = member;
+  //       const filterUser = user.map((val) => {
+  //         return new ObjectId(val);
+  //       });
+  //       countFilter['user_detail._id'] = { $in: filterUser };
+  //       const date1 = new Date(startDate);
+  //       const date2 = new Date(endDate);
+  //       date2.setHours(23, 59, 59, 999);
+  //       countFilter['createdAt'] = {
+  //         $gte: date1,
+  //         $lte: date2,
+  //       };
+  //     } else if (startDate && endDate) {
+  //       const date1 = new Date(startDate);
+  //       const date2 = new Date(endDate);
+  //       date2.setHours(23, 59, 59, 999);
+  //       countFilter['createdAt'] = {
+  //         $gte: date1,
+  //         $lte: date2,
+  //       };
+  //     } else if (projectId && member) {
+  //       const user = member;
+  //       const filterUser = user.map((val) => {
+  //         return new ObjectId(val);
+  //       });
+  //       countFilter['user_detail._id'] = { $in: filterUser };
+  //     } else if (member) {
+  //       const user = member;
+  //       const filterUser = user.map((val) => {
+  //         return new ObjectId(val);
+  //       });
+  //       countFilter['user_detail._id'] = { $in: filterUser };
+  //     }
+
+  //     ags.push({ $match: countFilter });
+
+  //     const eodDetail = await this.EodModel.aggregate(ags)
+  //       .sort({ _id: -1 })
+  //       .skip(skip)
+  //       .limit(skip + resPerPage);
+
+  //     ags.push({
+  //       $count: 'totalCount',
+  //     });
+
+  //     const count = await this.EodModel.aggregate(ags);
+  //     const countt = count?.[0]?.totalCount;
+  //     const totalPages = Math.ceil(countt / resPerPage);
+  //     const hasNextPage = currentPage < totalPages;
+  //     const hasPreviousPage = currentPage > 1;
+
+  //     return {
+  //       success: true,
+  //       data: {
+  //         totalPages,
+  //         currentPage,
+  //         hasNextPage,
+  //         hasPreviousPage,
+  //         eodDetail,
+  //       },
+  //     };
+  //   } catch (error) {
+  //     throw error;
+  //   }
+  // }
 }

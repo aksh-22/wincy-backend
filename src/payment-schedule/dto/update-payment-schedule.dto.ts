@@ -45,5 +45,5 @@ export class UpdatePaymentScheduleDto {
 
   @IsOptional()
   @IsEnum(PAYMENT_SCHEDULE_STATUS)
-  status: boolean;
+  status: PAYMENT_SCHEDULE_STATUS;
 }

@@ -18,7 +18,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse();
     const request = ctx.getRequest();
 
-    const customStatus = exception
+    const customStatus = exception?.getResponse
       ? exception?.getResponse()?.status ?? null
       : null;
 

@@ -73,3 +73,17 @@ export class DeleteCustomersDto {
   @IsArray()
   customers: [string];
 }
+
+export class LinkCustomerDto {
+  @IsOptional()
+  @IsString()
+  customerId: string;
+
+  @IsOptional()
+  @IsString()
+  customerIdToRemove: string;
+
+  @IsNotEmpty()
+  @IsString()
+  projectId: string;
+}

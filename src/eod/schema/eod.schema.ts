@@ -28,6 +28,12 @@ export class Eod {
 
   @Prop({ default: now() })
   updatedAt: Date;
+
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
+  updatedBy: Types.ObjectId;
+
+  @Prop()
+  lastUpdated: Date;
 }
 
 export const EodSchema = SchemaFactory.createForClass(Eod);

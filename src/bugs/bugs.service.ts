@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import * as mongoose from 'mongoose';
@@ -46,83 +47,237 @@ export class BugsService {
 
   async createBug(user, dto, projectId, attachments) {
     try {
-      console.log('dtoInit', dto);
-      console.log('attachments', attachments);
-      const proAttach = [];
-      if (attachments?.length > 0) {
-        for (let i = 0; i < attachments.length; i++) {
-          proAttach.push(
-            await this.utilsSrvice.uploadFileS3(
-              attachments[i],
-              ConfigService.keys.FOLDER_BUG_ATTACHMENT,
-            ),
+      const bugs = {};
+      Object.keys(dto).forEach((el) => {
+        dto[el] = JSON.parse(dto[el]);
+      });
+      const plt = dto?.platform;
+      let assignees = dto.assignees;
+      for (let index = 0; index < plt.length; index++) {
+        let platform = plt[index];
+        const currAssignees = assignees[platform];
+
+        dto.platform = platform;
+        const proAttach = [];
+        if (attachments?.length > 0) {
+          for (let i = 0; i < attachments.length; i++) {
+            proAttach.push(
+              await this.utilsSrvice.uploadFileS3(
+                attachments[i],
+                ConfigService.keys.FOLDER_BUG_ATTACHMENT,
+              ),
+            );
+          }
+        }
+        dto.attachments = [...proAttach];
+        const project = await this.projectsService.getAppProject(
+          { _id: projectId },
+          {},
+        );
+        if (!project) {
+          throw new HttpException(
+            'No such Project Exists',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        let isValidUser = await this.utilsSrvice.projectAssociation(
+          project,
+          String(user._id),
+        );
+        if (['Member++', 'Admin'].includes(user.type)) {
+          isValidUser = true;
+        }
+        if (!isValidUser) {
+          throw new HttpException(
+            'You are not authorised to perform this task',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        let counter = await this.counterModel.findOne({ project: projectId });
+        if (platform) {
+          if (!project.platforms?.includes(platform)) {
+            platform = undefined;
+          }
+        }
+        if (currAssignees) {
+          const team = project.team?.filter((ele) => String(ele));
+          project.projectManagers
+            ? team.push(...project.projectManagers.map((el) => String(el)))
+            : null;
+          const validAssignees = currAssignees.filter((ele) =>
+            team.includes(ele),
+          );
+          dto.assignees = validAssignees;
+        }
+        if (platform) {
+          if (!project.platforms?.includes(platform)) {
+            platform = undefined;
+          }
+        }
+        if (platform && dto.section) {
+          const platformN = (
+            await this.sysService.getPlatforms({ platform })
+          )[0];
+          const sections = await this.projectsService.getSections(
+            projectId,
+            platformN._id,
+          );
+          if (!sections.data.includes(dto.section)) {
+            dto.section = undefined;
+          }
+        }
+        let bug = new this.bugModel(dto);
+        bug.createdBy = user._id;
+        bug.project = projectId;
+        if (dto.taskId) {
+          // this.tasksService.updateTasksApp({_id: dto.taskId}, {$set:{status: "ReviewFailed"}}, {});
+          let task = await this.tasksService.getTask({
+            _id: dto.taskId,
+          });
+          const updateStatus = await this.tasksService.updateTaskStatus(
+            user,
+            task,
+            'ReviewFailed',
+            undefined,
+          );
+          task = updateStatus.task;
+          task = await task.save({ new: true });
+          if (updateStatus && updateStatus.updateMilestone) {
+            this.tasksService.updateMilestoneStatus(user._id, task.milestone);
+          }
+          bug.task = dto.taskId;
+        }
+        bug.task = dto.taskId;
+        if (!counter) {
+          counter = new this.counterModel({ project: projectId });
+          counter = await counter.save();
+        }
+        bug.sNo = counter.sequence;
+        bug = await bug.save();
+        bug = await this.getBugPopulated({ _id: bug._id });
+        this.utilsSrvice.createBasicInfoActs(
+          user._id,
+          'Create',
+          'Bug',
+          undefined,
+          { title: bug.title },
+          undefined,
+          { _id: bug._id },
+          projectId,
+        );
+        if (dto.assignees && dto.assignees.length > 0) {
+          this.notifyService.createNotifications({
+            description: `You have been assigned a new Bug in Project \"${project.title}\".`,
+            module: 'Bug',
+            organisation: project.organisation,
+            project: project._id,
+            accessLevel: 'Member',
+            users: dto.assignees,
+            meta: {
+              projectName: project.title,
+              bugTitle: bug.title,
+              bugId: bug._id,
+            },
+          });
+        }
+        counter.sequence = counter.sequence + 1;
+        await counter.save();
+        bugs[platform] = bug;
+      }
+      return {
+        data: { bugs },
+        message: 'Bug created successfully.',
+        success: true,
+      };
+    } catch (error) {
+      console.error('Error in createBug', error);
+
+      throw new BadRequestException();
+    }
+  }
+
+  //====================================================//
+
+  async updateBug(user, dto, bugId) {
+    try {
+      let bug = await this.bugModel.findOne({ _id: bugId });
+      const project = await this.projectsService.getAppProject(
+        { _id: bug.project },
+        {},
+      );
+
+      const oldBug = JSON.parse(JSON.stringify(bug._doc));
+      if (!bug) {
+        throw new HttpException('No such Bug Exists', HttpStatus.BAD_REQUEST);
+      }
+
+      // updates availbale for creater of bug and authoritative people
+
+      const isProjectManager = this.utilsSrvice.isUserProjectManager(
+        project.projectManagers,
+        user._id,
+      );
+
+      if (
+        !['Admin', 'Member++'].includes(user.type) &&
+        !isProjectManager &&
+        String(user._id) != String(bug.createdBy)
+      ) {
+        let err = true;
+        for (let i = 0; i < bug.assignees.length; i++) {
+          if (String(bug.assignees[i]) == String(user._id)) {
+            err = false;
+            dto = {
+              status: dto.status,
+              assignees: dto.assignees,
+              comment: dto.comment,
+            };
+            break;
+          }
+        }
+        if (err) {
+          throw new HttpException(
+            'You are not authorised to perform this task!',
+            HttpStatus.BAD_REQUEST,
           );
         }
       }
-      dto.attachments = [...proAttach];
-      const project = await this.projectsService.getAppProject(
-        { _id: projectId },
-        {},
-      );
-      if (!project) {
-        throw new HttpException(
-          'No such Project Exists',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      let isValidUser = await this.utilsSrvice.projectAssociation(
-        project,
-        String(user._id),
-      );
-      if (['Member++', 'Admin'].includes(user.type)) {
-        isValidUser = true;
-      }
-      if (!isValidUser) {
-        throw new HttpException(
-          'You are not authorised to perform this task',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      let counter = await this.counterModel.findOne({ project: projectId });
-      if (dto.platform) {
-        if (!project.platforms?.includes(dto.platform)) {
-          dto.platform = undefined;
-        }
-      }
-      if (dto.assignees) {
-        dto.assignees = JSON.parse(dto.assignees);
-        const team = project.team?.filter((ele) => String(ele));
-        project.projectManagers
-          ? team.push(...project.projectManagers.map((el) => String(el)))
-          : null;
-        const validAssignees = dto.assignees.filter((ele) =>
-          team.includes(ele),
-        );
-        dto.assignees = validAssignees;
-      }
-      if (dto.platform) {
-        if (!project.platforms?.includes(dto.platform)) {
-          dto.platform = undefined;
-        }
-      }
-      if (dto.platform && dto.section) {
-        const platform = (
-          await this.sysService.getPlatforms({ platform: dto.platform })
-        )[0];
-        const sections = await this.projectsService.getSections(
-          projectId,
-          platform._id,
-        );
-        if (!sections.data.includes(dto.section)) {
-          dto.section = undefined;
+
+      let oldDto = {};
+
+      for (const [key, value] of Object.entries(dto)) {
+        if (value !== undefined) {
+          oldDto[key] = bug[key];
         }
       }
 
-      let bug = new this.bugModel(dto);
-      bug.createdBy = user._id;
-      bug.project = projectId;
+      bug.title = dto.title ? dto.title : bug.title;
+      bug.description = dto.description ? dto.description : bug.description;
+      bug.priority = dto.priority ? dto.priority : bug.priority;
+      if (dto.platform && dto.platform !== bug.platform) {
+        if (project.platforms?.includes(dto.platform)) {
+          bug.platform = dto.platform;
+          bug.section = undefined;
+        } else {
+          dto.platform = undefined;
+        }
+      }
+      if (dto.section && bug.platform) {
+        const platform = (
+          await this.sysService.getPlatforms({ platform: bug.platform })
+        )[0];
+        const sections = await this.projectsService.getSections(
+          project._id,
+          platform._id,
+        );
+        if (sections.data.includes(dto.section)) {
+          bug.section = dto.section;
+        }
+      }
+      bug.driveUrls = dto.driveUrls ? dto.driveUrls : bug.driveUrls;
       if (dto.taskId) {
-        // this.tasksService.updateTasksApp({_id: dto.taskId}, {$set:{status: "ReviewFailed"}}, {});
+        // this.tasksService.updateTasksApp({_id: dto.taskId}, {$set:{status: "ReviewFailed"}}, {})
+        bug.task = dto.taskId;
         let task = await this.tasksService.getTask({ _id: dto.taskId });
         const updateStatus = await this.tasksService.updateTaskStatus(
           user,
@@ -135,169 +290,27 @@ export class BugsService {
         if (updateStatus && updateStatus.updateMilestone) {
           this.tasksService.updateMilestoneStatus(user._id, task.milestone);
         }
-        bug.task = dto.taskId;
       }
-      bug.task = dto.taskId;
-
-      if (!counter) {
-        counter = new this.counterModel({ project: projectId });
-        counter = await counter.save();
-      }
-      bug.sNo = counter.sequence;
-      bug = await bug.save();
-      bug = await this.getBugPopulated({ _id: bug._id });
-
-      this.utilsSrvice.createBasicInfoActs(
-        user._id,
-        'Create',
-        'Bug',
-        undefined,
-        { title: bug.title },
-        undefined,
-        { _id: bug._id },
-        projectId,
-      );
-      if (dto.assignees && dto.assignees.length > 0) {
-        this.notifyService.createNotifications({
-          description: `You have been assigned a new Bug in Project \"${project.title}\".`,
-          module: 'Bug',
-          organisation: project.organisation,
-          project: project._id,
-          accessLevel: 'Member',
-          users: dto.assignees,
-          meta: {
-            projectName: project.title,
-            bugTitle: bug.title,
-            bugId: bug._id,
-          },
-        });
-      }
-      counter.sequence = counter.sequence + 1;
-      await counter.save();
-      return {
-        data: { bug },
-        message: 'Bug created successfully.',
-        success: true,
-      };
-    } catch (error) {
-      throw new BadRequestException();
-    }
-  }
-
-  //====================================================//
-
-  async updateBug(user, dto, bugId) {
-    let bug = await this.bugModel.findOne({ _id: bugId });
-    const project = await this.projectsService.getAppProject(
-      { _id: bug.project },
-      {},
-    );
-
-    const oldBug = JSON.parse(JSON.stringify(bug._doc));
-    if (!bug) {
-      throw new HttpException('No such Bug Exists', HttpStatus.BAD_REQUEST);
-    }
-
-    // updates availbale for creater of bug and authoritative people
-
-    const isProjectManager = this.utilsSrvice.isUserProjectManager(
-      project.projectManagers,
-      user._id,
-    );
-
-    if (
-      !['Admin', 'Member++'].includes(user.type) &&
-      !isProjectManager &&
-      String(user._id) != String(bug.createdBy)
-    ) {
-      let err = true;
-      for (let i = 0; i < bug.assignees.length; i++) {
-        if (String(bug.assignees[i]) == String(user._id)) {
-          err = false;
-          dto = {
-            status: dto.status,
-            assignees: dto.assignees,
-            comment: dto.comment,
-          };
-          break;
-        }
-      }
-      if (err) {
-        throw new HttpException(
-          'You are not authorised to perform this task!',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-    }
-
-    let oldDto = {};
-
-    for (const [key, value] of Object.entries(dto)) {
-      if (value !== undefined) {
-        oldDto[key] = bug[key];
-      }
-    }
-
-    bug.title = dto.title ? dto.title : bug.title;
-    bug.description = dto.description ? dto.description : bug.description;
-    bug.priority = dto.priority ? dto.priority : bug.priority;
-    if (dto.platform && dto.platform !== bug.platform) {
-      if (project.platforms?.includes(dto.platform)) {
-        bug.platform = dto.platform;
-        bug.section = undefined;
-      } else {
-        dto.platform = undefined;
-      }
-    }
-    if (dto.section && bug.platform) {
-      const platform = (
-        await this.sysService.getPlatforms({ platform: bug.platform })
-      )[0];
-      const sections = await this.projectsService.getSections(
-        project._id,
-        platform._id,
-      );
-      if (sections.data.includes(dto.section)) {
-        bug.section = dto.section;
-      }
-    }
-    bug.driveUrls = dto.driveUrls ? dto.driveUrls : bug.driveUrls;
-    if (dto.taskId) {
-      // this.tasksService.updateTasksApp({_id: dto.taskId}, {$set:{status: "ReviewFailed"}}, {})
-      bug.task = dto.taskId;
-      let task = await this.tasksService.getTask({ _id: dto.taskId });
-      const updateStatus = await this.tasksService.updateTaskStatus(
-        user,
-        task,
-        'ReviewFailed',
-        undefined,
-      );
-      task = updateStatus.task;
-      task = await task.save({ new: true });
-      if (updateStatus && updateStatus.updateMilestone) {
-        this.tasksService.updateMilestoneStatus(user._id, task.milestone);
-      }
-    }
-    if (dto.status) {
-      const x = StatusHierarchy[`${dto.status}`];
-      const y = StatusHierarchy[`${bug.status}`];
-      if (x == 3 && y == 1) {
-        this.actsService.createActivity([
-          {
-            type: 'Bug',
-            operation: 'Update',
-            field: 'status',
-            from: bug.status,
-            to: dto.status,
-            createdBy: user._id,
-            createdAt: new Date(),
-            bug: bugId,
-            project: bug.project,
-          },
-        ]);
-      } else if (x != y + 1 && x != y - 1 && x != y - 4) {
-        dto.status = undefined;
-      } else {
+      if (dto.status) {
+        // const x = StatusHierarchy[`${dto.status}`];
+        // const y = StatusHierarchy[`${bug.status}`];
+        // if (x == 3 && y == 1) {
+        //   this.actsService.createActivity([
+        //     {
+        //       type: 'Bug',
+        //       operation: 'Update',
+        //       field: 'status',
+        //       from: bug.status,
+        //       to: dto.status,
+        //       createdBy: user._id,
+        //       createdAt: new Date(),
+        //       bug: bugId,
+        //       project: bug.project,
+        //     },
+        //   ]);
+        // } else if (x != y + 1 && x != y - 1 && x != y - 4) {
+        //   // dto.status = undefined;
+        // } else {
         if (dto.status == 'BugPersists' && bug.status == 'InReview') {
           bug.failedReviewCount += 1;
         } else if (dto.status == 'Open' && bug.status == 'Done') {
@@ -318,94 +331,112 @@ export class BugsService {
           }
           bug.reOpenCount += 1;
         }
+        // }
+        await this.actsService.createActivity([
+          {
+            type: 'Bug',
+            operation: 'Update',
+            field: 'status',
+            from: bug.status,
+            to: dto.status,
+            createdBy: user._id,
+            createdAt: new Date(),
+            bug: bugId,
+            project: bug.project,
+          },
+        ]);
+        bug.status = dto.status;
       }
-      await this.actsService.createActivity([
-        {
-          type: 'Bug',
-          operation: 'Update',
-          field: 'status',
-          from: bug.status,
-          to: dto.status,
+
+      // updates available for assignee of the bug
+      if (dto.assignees && dto.assignees.length != 0) {
+        const team = project.team?.filter((ele) => String(ele));
+        project.projectManagers
+          ? team.push(...project.projectManagers.map((el) => String(el)))
+          : null;
+        const validAssignees = dto.assignees.filter((ele) =>
+          team.includes(ele),
+        );
+        this.utilsSrvice.createAssigneeActs(
+          user._id,
+          bug._id,
+          'Bug',
+          bug.assignees,
+          validAssignees,
+          project._id,
+        );
+        const oldAssigneesObj = {};
+        const add = [];
+        bug.assignees.forEach((ele) => {
+          oldAssigneesObj[String(ele)] = true;
+        });
+
+        validAssignees.forEach((ele) => {
+          if (!oldAssigneesObj[String(ele)]) {
+            add.push(ele);
+          }
+        });
+        if (add.length > 0) {
+          this.notifyService.createNotifications({
+            description: `You have been assigned a new Bug in Project \"${project.title}\".`,
+            module: 'Bug',
+            organisation: project.organisation,
+            project: project._id,
+            accessLevel: 'Member',
+            users: validAssignees,
+            meta: {
+              projectName: project.title,
+              bugTitle: bug.title,
+              bugId: bug._id,
+            },
+          });
+        }
+        bug.assignees = validAssignees;
+      } else if (dto.assignees) {
+        throw new HttpException(
+          'Bug needs atleast one assignee!',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (dto.comment) {
+        bug.comments.unshift({
+          text: dto.comment,
           createdBy: user._id,
           createdAt: new Date(),
-          bug: bugId,
-          project: bug.project,
-        },
-      ]);
-      bug.status = dto.status;
-    }
-
-    // updates available for assignee of the bug
-    if (dto.assignees && dto.assignees.length != 0) {
-      const team = project.team?.filter((ele) => String(ele));
-      project.projectManagers
-        ? team.push(...project.projectManagers.map((el) => String(el)))
-        : null;
-      const validAssignees = dto.assignees.filter((ele) => team.includes(ele));
-      this.utilsSrvice.createAssigneeActs(
-        user._id,
-        bug._id,
-        'Bug',
-        bug.assignees,
-        validAssignees,
-        project._id,
-      );
-      const oldAssigneesObj = {};
-      const add = [];
-      bug.assignees.forEach((ele) => {
-        oldAssigneesObj[String(ele)] = true;
-      });
-
-      validAssignees.forEach((ele) => {
-        if (!oldAssigneesObj[String(ele)]) {
-          add.push(ele);
-        }
-      });
-      if (add.length > 0) {
-        this.notifyService.createNotifications({
-          description: `You have been assigned a new Bug in Project \"${project.title}\".`,
-          module: 'Bug',
-          organisation: project.organisation,
-          project: project._id,
-          accessLevel: 'Member',
-          users: validAssignees,
-          meta: {
-            projectName: project.title,
-            bugTitle: bug.title,
-            bugId: bug._id,
-          },
         });
       }
-      bug.assignees = validAssignees;
-    } else if (dto.assignees) {
-      throw new HttpException(
-        'Bug needs atleast one assignee!',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
 
-    if (dto.comment) {
-      bug.comments.unshift({
-        text: dto.comment,
-        createdBy: user._id,
-        createdAt: new Date(),
-      });
-    }
-
-    bug = await bug.save({ new: true });
-    if (dto.status == 'Done' && bug.task) {
-      const bugCount = await this.getBugsCountForTask(bug.task);
-      if (
-        !bugCount?.data?.bugs ||
-        bugCount?.data?.bugs['total'] - bugCount?.data?.bugs['totalDone'] == 0
-      ) {
-        // this.tasksService.updateTasksApp({_id: bug.task}, {$set:{status: "WaitingForReview"}}, {});
+      bug = await bug.save({ new: true });
+      if (dto.status == 'Done' && bug.task) {
+        const bugCount = await this.getBugsCountForTask(bug.task);
+        if (
+          !bugCount?.data?.bugs ||
+          bugCount?.data?.bugs['total'] - bugCount?.data?.bugs['totalDone'] == 0
+        ) {
+          // this.tasksService.updateTasksApp({_id: bug.task}, {$set:{status: "WaitingForReview"}}, {});
+          if (bug.task) {
+            let task = await this.tasksService.getTask({ _id: bug.task });
+            const updateStatus = await this.tasksService.updateTaskStatus(
+              user,
+              task,
+              'WaitingForReview',
+              undefined,
+            );
+            task = updateStatus.task;
+            task = await task.save({ new: true });
+            if (updateStatus && updateStatus.updateMilestone) {
+              this.tasksService.updateMilestoneStatus(user._id, task.milestone);
+            }
+          }
+        }
+      } else if (dto.status !== 'Done' && bug.status === 'Done' && bug.task) {
         if (bug.task) {
           let task = await this.tasksService.getTask({ _id: bug.task });
           const updateStatus = await this.tasksService.updateTaskStatus(
             user,
             task,
-            'WaitingForReview',
+            'ReviewFailed',
             undefined,
           );
           task = updateStatus.task;
@@ -415,40 +446,28 @@ export class BugsService {
           }
         }
       }
-    } else if (dto.status !== 'Done' && bug.status === 'Done' && bug.task) {
-      if (bug.task) {
-        let task = await this.tasksService.getTask({ _id: bug.task });
-        const updateStatus = await this.tasksService.updateTaskStatus(
-          user,
-          task,
-          'ReviewFailed',
-          undefined,
-        );
-        task = updateStatus.task;
-        task = await task.save({ new: true });
-        if (updateStatus && updateStatus.updateMilestone) {
-          this.tasksService.updateMilestoneStatus(user._id, task.milestone);
-        }
-      }
+
+      this.utilsSrvice.createBasicInfoActs(
+        user._id,
+        'Update',
+        'Bug',
+        { ...dto, assignees: undefined },
+        undefined,
+        oldBug,
+        bug,
+        project._id,
+      );
+      bug = await this.getBugPopulated({ _id: bug._id });
+
+      return {
+        data: { bug },
+        message: 'Bug updated successfully.',
+        success: true,
+      };
+    } catch (error) {
+      console.error('Error in updateBug', error);
+      throw new InternalServerErrorException(error);
     }
-
-    this.utilsSrvice.createBasicInfoActs(
-      user._id,
-      'Update',
-      'Bug',
-      { ...dto, assignees: undefined },
-      undefined,
-      oldBug,
-      bug,
-      project._id,
-    );
-    bug = await this.getBugPopulated({ _id: bug._id });
-
-    return {
-      data: { bug },
-      message: 'Bug updated successfully.',
-      success: true,
-    };
   }
 
   //====================================================//
@@ -606,102 +625,177 @@ export class BugsService {
 
   //====================================================//
 
-  async getProjectBugs(user, projectId, orgId, platform, pageSize, pageNo) {
-    const project = await this.projectsService.getAppProject(
-      { _id: projectId },
-      {},
-    );
-    if (String(project.organisation) != orgId) {
-      throw new HttpException(
-        'Provided project is not associated with given organisation!!',
-        HttpStatus.BAD_REQUEST,
+  async getProjectBugs(query) {
+    try {
+      const nQuery = { ...query };
+      query.sortBy = query.sortBy ? Number(query.sortBy) : 1;
+      const {
+        user,
+        projectId,
+        orgId,
+        platform,
+        startDate,
+        endDate,
+        createdBy = [],
+        assignees = [],
+        priority = [],
+        task = [],
+        status = [],
+        search = '',
+        sortBy = 1,
+        limit = 10,
+        page = 1,
+      } = query;
+      const project = await this.projectsService.getAppProject(
+        { _id: projectId },
+        {},
       );
-    }
-    if (
-      !(await this.utilsSrvice.projectAssociation(project, String(user._id))) &&
-      !['Admin', 'Member++'].includes(user.type)
-    ) {
-      throw new HttpException(
-        'You are not authorised to perform this task!!',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
+      if (String(project.organisation) != orgId) {
+        throw new HttpException(
+          'Provided project is not associated with given organisation!!',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (
+        !(await this.utilsSrvice.projectAssociation(
+          project,
+          String(user._id),
+        )) &&
+        !['Admin', 'Member++'].includes(user.type)
+      ) {
+        throw new HttpException(
+          'You are not authorised to perform this task!!',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
 
-    const count = await this.bugModel
-      .find({ project: projectId, platform })
-      .countDocuments();
-    const bugs = await this.bugModel.aggregate([
-      {
-        $match: { project: mongoose.Types.ObjectId(projectId), platform },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'assignees',
-          foreignField: '_id',
-          as: 'assignees',
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'createdBy',
-          foreignField: '_id',
-          as: 'createdBy',
-        },
-      },
-      {
-        $lookup: {
-          from: 'tasks',
-          localField: 'task',
-          foreignField: '_id',
-          as: 'task',
-        },
-      },
-      {
-        $addFields: {
-          severityValue: {
-            $indexOfArray: [
-              ['Major', 'Minor', 'Critical', 'Blocker'],
-              '$severity',
-            ],
+      const count = await this.bugModel
+        .find({ project: projectId, ...(platform && { platform }) })
+        .countDocuments();
+      const l = limit ? Number(limit) : 10;
+      const p = page ? Number(page) : 1;
+      const s = limit * (p - 1);
+      const $match = {
+        project: mongoose.Types.ObjectId(projectId),
+        ...(startDate &&
+          endDate && {
+            createdAt: { $gte: new Date(startDate), $lte: new Date(endDate) },
+          }),
+        ...(platform && { platform }),
+        ...(createdBy.length && {
+          createdBy: {
+            $in: createdBy.map((el) => mongoose.Types.ObjectId(el)),
           },
-          priorityValue: {
-            $indexOfArray: [['High', 'Medium', 'Low'], '$priority'],
+        }),
+        ...(assignees.length && {
+          assignees: {
+            $in: assignees.map((el) => mongoose.Types.ObjectId(el)),
           },
-          statusValue: {
-            $indexOfArray: [
-              ['Open', 'InProgress', 'InReview', 'Done'],
-              '$status',
-            ],
+        }),
+        ...(task.length && {
+          task: { $in: task.map((el) => mongoose.Types.ObjectId(el)) },
+        }),
+        ...(status.length && { status: { $in: status } }),
+        ...(priority.length && { priority: { $in: priority } }),
+        title: { $regex: search, $options: 'i' },
+      };
+      const bugs = await this.bugModel.aggregate([
+        {
+          $match,
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assignees',
+            foreignField: '_id',
+            as: 'assignees',
           },
         },
-      },
-      {
-        $sort: { statusValue: 1, priorityValue: 1 },
-      },
-      {
-        $project: {
-          'assignees.sessions': 0,
-          'assignees.password': 0,
-          'assignees.projects': 0,
-          'assignees.userType': 0,
-          'assignees.createdAt': 0,
-          'assignees.updatedAt': 0,
-          'assignees.accountDetails': 0,
-          'assignees.verified': 0,
-          'createdBy.sessions': 0,
-          'createdBy.password': 0,
-          'createdBy.projects': 0,
-          'createdBy.userType': 0,
-          'createdBy.createdAt': 0,
-          'createdBy.updatedAt': 0,
-          'createdBy.accountDetails': 0,
-          'createdBy.verified': 0,
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'createdBy',
+            foreignField: '_id',
+            as: 'createdBy',
+          },
         },
-      },
-    ]);
-    return { message: '', data: { bugs, count }, status: 'Successful' };
+        {
+          $lookup: {
+            from: 'tasks',
+            localField: 'task',
+            foreignField: '_id',
+            as: 'task',
+          },
+        },
+        {
+          $addFields: {
+            severityValue: {
+              $indexOfArray: [
+                ['Major', 'Minor', 'Critical', 'Blocker'],
+                '$severity',
+              ],
+            },
+            priorityValue: {
+              $indexOfArray: [['High', 'Medium', 'Low'], '$priority'],
+            },
+            statusValue: {
+              $indexOfArray: [
+                ['Open', 'InProgress', 'InReview', 'Done'],
+                '$status',
+              ],
+            },
+          },
+        },
+        {
+          $sort: {
+            ...(!nQuery.sortBy && {
+              isCompleted: 1,
+              statusValue: 1,
+              priorityValue: 1,
+              _id: -1,
+            }),
+            sNo: sortBy,
+          },
+        },
+        {
+          $project: {
+            'assignees.sessions': 0,
+            'assignees.password': 0,
+            'assignees.projects': 0,
+            'assignees.userType': 0,
+            'assignees.createdAt': 0,
+            'assignees.updatedAt': 0,
+            'assignees.accountDetails': 0,
+            'assignees.verified': 0,
+            'createdBy.sessions': 0,
+            'createdBy.password': 0,
+            'createdBy.projects': 0,
+            'createdBy.userType': 0,
+            'createdBy.createdAt': 0,
+            'createdBy.updatedAt': 0,
+            'createdBy.accountDetails': 0,
+            'createdBy.verified': 0,
+          },
+        },
+        { $limit: s + l },
+        { $skip: s },
+      ]);
+      return {
+        message: '',
+        data: {
+          bugs,
+          count,
+          meta: this.utilsSrvice.getMetaData({
+            limit: limit,
+            page,
+            total: bugs.length,
+          }),
+        },
+        status: 'Successful',
+      };
+    } catch (error) {
+      console.error('Error in getProjectBugs', error);
+    }
   }
   //====================================================//
 
@@ -787,8 +881,84 @@ export class BugsService {
   //====================================================//
 
   async getSingleBug(bugId, projectId, orgId) {
-    const bug = await this.bugModel.findOne({ _id: bugId }).exec();
-    if (String(bug.project) != projectId) {
+    const $match = {
+      _id: new mongoose.Types.ObjectId(bugId),
+    };
+    const lookup = [
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'assignees',
+          foreignField: '_id',
+          as: 'assignees',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'createdBy',
+          foreignField: '_id',
+          as: 'createdBy',
+        },
+      },
+      {
+        $lookup: {
+          from: 'tasks',
+          localField: 'task',
+          foreignField: '_id',
+          as: 'task',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'comments.createdBy',
+          foreignField: '_id',
+          as: 'commentsU',
+        },
+      },
+    ];
+    const unwind = [
+      {
+        $unwind: {
+          path: '$createdBy',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $unwind: {
+          path: '$task',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    ];
+    const $project = {
+      attachments: 1,
+      priority: 1,
+      status: 1,
+      title: 1,
+      description: 1,
+      platform: 1,
+      comments: 1,
+      project: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      'assignees._id': 1,
+      'assignees.name': 1,
+      'assignees.profilePicture': 1,
+      'createdBy._id': 1,
+      'createdBy.name': 1,
+      'createdBy.profilePicture': 1,
+      'task._id': 1,
+      'task.title': 1,
+      'task.milestone': 1,
+      'commentsU.name': 1,
+      'commentsU.profilePicture': 1,
+      'commentsU._id': 1,
+    };
+    const ags = [{ $match }, ...lookup, ...unwind, { $project }];
+    const bug = await this.bugModel.aggregate(ags);
+    if (!bug && String(bug[0]?.project) != projectId) {
       throw new HttpException(
         'Given bug is not associated with provided project! ',
         HttpStatus.BAD_REQUEST,
@@ -805,7 +975,11 @@ export class BugsService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    return { data: { bug }, message: '', success: true };
+    bug[0].comments.forEach((el, i) => {
+      bug[0].comments[i].createdBy = bug[0].commentsU[i];
+    });
+    bug[0].commentsU = undefined;
+    return { data: { bug: bug[0] }, message: '', success: true };
   }
   //====================================================//
 

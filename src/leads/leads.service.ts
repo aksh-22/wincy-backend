@@ -25,8 +25,6 @@ export class LeadsService {
   ) {}
 
   async createLeadFromWebSite(dto: CreateLeadFromWebDto, organisation: string) {
-    console.log('dto', dto);
-
     dto['status'] == 'Awarded';
     dto.name = dto.name ? this.utilsService.encryptData(dto.name) : undefined;
     dto.email = dto.email
@@ -272,7 +270,7 @@ export class LeadsService {
         },
       },
       {
-        $sort: { 'sequence.sequence': 1 },
+        $sort: { createdAt: -1 },
       },
       {
         $project: {

@@ -1,20 +1,24 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
-  Post,
-  UploadedFile,
-  UseInterceptors,
-  Request,
-  UseGuards,
   Patch,
+  Post,
+  Request,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { UsersService } from './users.service';
-import { SignupAndJoinOrgDto, SignupDto } from './dto/signup.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
-import { UpdateProfileDto } from './dto/updateUser.dto';
+import { SignupAndJoinOrgDto, SignupDto } from './dto/signup.dto';
+import { UpdateOtherData, UpdateProfileDto } from './dto/updateUser.dto';
+import { UsersService } from './users.service';
+import { RolesGuard } from 'src/auth/roles.guard';
+import { Roles } from 'src/auth/roles.decorator';
+import { Role } from 'src/auth/roles.enum';
 import { PermissionGuard } from 'src/auth/permission.guard';
 import { Permissions } from 'src/auth/permission.decorator';
 import { Permission } from 'src/auth/permission.enum';
@@ -103,5 +107,35 @@ export class UsersController {
   async getProfile(@Request() req) {
     const { user } = req;
     return await this.usersService.getProfile(user);
+  }
+
+  //=======================================//
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.PROFILE)
+  @Get('profile/user/:organisation/:id')
+  async getUserProfile(@Param('id') id: string) {
+    return await this.usersService.getUserProfile(id);
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.UPDATE_PROFILE)
+  @Patch('update/user/:organisation/:id')
+  async updateUserProfile(
+    @Param('id') id: string,
+    @Body() dto: UpdateOtherData,
+  ) {
+    return await this.usersService.updateUser(id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @Permissions(Permission.UPDATE_PROFILE)
+  @Delete('archive/user/:organisation/:id')
+  async archiveUser(@Param('id') id: string) {
+    return await this.usersService.archiveUser(id);
+  }
+
+  @Get('fix-user')
+  async fixUser() {
+    return this.usersService.fixUser();
   }
 }

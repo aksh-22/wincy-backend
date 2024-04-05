@@ -29,6 +29,8 @@ import { UpdateSubTaskDto } from './dto/updateSubTask.dto';
 import { UpdateTaskDescriptionDto, UpdateTaskDto } from './dto/updateTask.dto';
 import { UpdateTodoDto } from './dto/updateTodo.dto';
 import { TasksService } from './tasks.service';
+import { GetTasksDto } from './dto/getTasks.dto';
+import { GetMilestoneFilterDto } from './dto/getMilestone.dto';
 
 @Controller('tasks')
 export class TasksController {
@@ -95,9 +97,15 @@ export class TasksController {
     @Request() req,
     @Param('organisation') orgId: string,
     @Param('project') projectId: string,
+    @Query('query') query: GetMilestoneFilterDto,
   ) {
     const { user } = req;
-    return await this.tasksService.getProjectMilestones(user, orgId, projectId);
+    return await this.tasksService.getProjectMilestones(
+      user,
+      orgId,
+      projectId,
+      query,
+    );
   }
 
   //=================================================//
@@ -192,6 +200,47 @@ export class TasksController {
   ) {
     const { user } = req;
     return await this.tasksService.getMilestoneTasks(user, milestoneId, orgId);
+  }
+
+  //=================================================//
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Get(':organisation/:milestone/milestones-module-tasks')
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
+  async getAllMilestonesTasks(
+    @Param('organisation') orgId: string,
+    @Param('milestone') milestoneId: string,
+  ) {
+    return await this.tasksService.getAllMilestonesTasks(milestoneId);
+  }
+
+  //=================================================//
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Get(':organisation/:milestone/:module/module-tasks')
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
+  async getAllModuleTasks(
+    @Param('milestone') milestoneId: string,
+    @Param('module') moduleId: string,
+    @Query('query') query: GetTasksDto,
+  ) {
+    return await this.tasksService.getAllModuleTasks(
+      milestoneId,
+      moduleId,
+      query,
+    );
+  }
+
+  //=================================================//
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Get(':organisation/:module/:task/tasks-details')
+  @Roles(Role.Admin, Role['Member++'], Role['Member+'], Role['Member'])
+  async getModuleTaskDetails(
+    @Param('module') moduleId: string,
+    @Param('task') taskId: string,
+  ) {
+    return await this.tasksService.getModuleTaskDetails(moduleId, taskId);
   }
 
   //=================================================//

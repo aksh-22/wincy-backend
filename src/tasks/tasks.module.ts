@@ -1,22 +1,22 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ActivitiesModule } from 'src/activities/activities.module';
+import { BugsModule } from 'src/bugs/bugs.module';
 import { EventsModule } from 'src/events/events.module';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 import { ProjectsModule } from 'src/projects/projects.module';
 import { UtilsModule } from 'src/utils/utils.module';
 import { MilestoneSchema } from './schema/milestone.schema';
+import { MilestoneSortSchema } from './schema/milestone_sort.schema';
 import { ModuleSchema } from './schema/module.schema';
-import { TodoSortSchema } from './schema/todo_sort.schema';
+import { ModuleSortSchema } from './schema/module_sort.schema';
 import { TaskSchema } from './schema/task.schema';
 import { TaskReportSchema } from './schema/task_report.schema';
+import { TaskSortSchema } from './schema/task_sort.schema';
 import { TodoSchema } from './schema/todo.schema';
+import { TodoSortSchema } from './schema/todo_sort.schema';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
-import { TaskSortSchema } from './schema/task_sort.schema';
-import { ModuleSortSchema } from './schema/module_sort.schema';
-import { MilestoneSortSchema } from './schema/milestone_sort.schema';
-import { ActivitiesModule } from 'src/activities/activities.module';
-import { NotificationsModule } from 'src/notifications/notifications.module';
-import { BugsModule } from 'src/bugs/bugs.module';
 // import { EodSchema } from './schema/EOD.schema';
 
 @Module({

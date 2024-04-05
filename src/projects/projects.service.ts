@@ -4,27 +4,26 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import * as mongoose from 'mongoose';
 import { Model } from 'mongoose';
+import { ActivitiesService } from 'src/activities/activities.service';
+import { BugsService } from 'src/bugs/bugs.service';
 import { ConfigService } from 'src/config/config.service';
+import { InvoicesService } from 'src/invoices/invoices.service';
+import { NotificationsService } from 'src/notifications/notifications.service';
 import { OrganisationsService } from 'src/organisations/organisations.service';
+import { SystemService } from 'src/system/system.service';
+import { TasksService } from 'src/tasks/tasks.service';
 import { UsersService } from 'src/users/users.service';
 import { UtilsService } from 'src/utils/utils.service';
-import * as mongoose from 'mongoose';
-import { TasksService } from 'src/tasks/tasks.service';
-import { BugsService } from 'src/bugs/bugs.service';
-import { SystemService } from 'src/system/system.service';
-import { ActivitiesService } from 'src/activities/activities.service';
-import { NotificationsService } from 'src/notifications/notifications.service';
-import { InvoicesService } from 'src/invoices/invoices.service';
-import { Types } from 'mongoose';
-import { Project_Type } from './enum/project.enum';
 import {
   CreatePaymentPhaseDto,
   UpdatePaymentPhaseDto,
 } from './dto/paymentPhase.dto';
-import { PaymentScheduleModel } from 'src/payment-schedule/schema/paymentSchedule.schema';
+import { Project_Type } from './enum/project.enum';
 const activityType = 'Project';
 
 @Injectable()
@@ -333,58 +332,64 @@ export class ProjectsService {
   //==================================================//
 
   async getProject(user, projectId, orgId) {
-    let project;
-    if (['Admin'].includes(user.type)) {
-      project = await this.projectModel
-        .findOne({ _id: projectId, organisation: orgId })
-        .populate('team', ['name', 'profilePicture'])
-        .populate('projectManagers', ['name', 'profilePicture'])
-        .populate('createdBy', ['name', 'profilePicture'])
-        .populate('lastUpdatedBy', ['name', 'profilePicture'])
-        .select([
-          '+paymentInfo',
-          '+credentials',
-          '+clientData',
-          '+createdBy',
-          '+lastUpdatedBy',
-        ])
-        .lean();
-    } else {
-      project = await this.projectModel
-        .findOne({ _id: projectId })
-        .populate('team', ['name', 'profilePicture'])
-        .populate('projectManagers', ['name', 'profilePicture'])
-        .select(['+credentials'])
-        .lean();
+    try {
+      let project;
+      if (['Admin'].includes(user.type)) {
+        project = await this.projectModel
+          .findOne({ _id: projectId, organisation: orgId })
+          .populate('team', ['name', 'profilePicture'])
+          .populate('projectManagers', ['name', 'profilePicture'])
+          .populate('createdBy', ['name', 'profilePicture'])
+          .populate('lastUpdatedBy', ['name', 'profilePicture'])
+          .select([
+            '+paymentInfo',
+            '+credentials',
+            '+clientData',
+            '+createdBy',
+            '+lastUpdatedBy',
+          ])
+          .lean();
+      } else {
+        project = await this.projectModel
+          .findOne({ _id: projectId })
+          .populate('team', ['name', 'profilePicture'])
+          .populate('projectManagers', ['name', 'profilePicture'])
+          .select(['+credentials'])
+          .lean();
 
-      const team = [];
-      project.team?.forEach((element) => {
-        team.push(String(element._id));
-      });
-      const projectManagers = project.projectManagers?.map((el) =>
-        String(el._id),
-      );
-      if (projectManagers?.length) team.push(...projectManagers);
-
-      if (!team.includes(String(user._id)) && user.type != 'Member++') {
-        throw new HttpException(
-          'You are not authorized to perform this task',
-          HttpStatus.BAD_REQUEST,
+        const team = [];
+        project.team?.forEach((element) => {
+          team.push(String(element._id));
+        });
+        const projectManagers = project.projectManagers?.map((el) =>
+          String(el._id),
         );
-      }
-    }
-    project = await this.decryptProjectData(project);
+        if (projectManagers?.length) team.push(...projectManagers);
 
-    const count = await this.tasksService.getMilestoneCount([project._id]);
-    const { todosCount, tasksCount } = await this.tasksService.getTasksCount(
-      projectId,
-    );
-    project = { ...project, milestoneCount: count[`${String(project._id)}`] };
-    return {
-      status: 'Successful',
-      data: { project, tasksCount, todosCount },
-      message: '',
-    };
+        if (!team.includes(String(user._id)) && user.type != 'Member++') {
+          throw new HttpException(
+            'You are not authorized to perform this task',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+      project = await this.decryptProjectData(project);
+
+      const count = await this.tasksService.getMilestoneCount([project._id]);
+      const { todosCount, tasksCount } = await this.tasksService.getTasksCount(
+        projectId,
+      );
+      project = { ...project, milestoneCount: count[`${String(project._id)}`] };
+      return {
+        status: 'Successful',
+        data: { project, tasksCount, todosCount },
+        message: '',
+      };
+    } catch (error) {
+      console.error('Error in getProject', error);
+
+      throw new InternalServerErrorException(error);
+    }
   }
 
   async addAttachments(
@@ -680,7 +685,7 @@ export class ProjectsService {
   }
 
   async decryptProjectData(project) {
-    if (project.clientData) {
+    if (project?.clientData) {
       project.clientData.name = project.clientData.name
         ? await this.utilsService.decryptData(project.clientData?.name)
         : undefined;
@@ -775,134 +780,163 @@ export class ProjectsService {
 
   //==================================================//
 
-  async getMyProjects(user, orgId, status, projectType) {
-    const fields = [
-      'title',
-      'logo',
-      'startedAt',
-      'dueDate',
-      'team',
-      'projectManagers',
-      'technologies',
-      'projectType',
-    ];
-    let typeOfProject = [
-      Project_Type.DEVELOPMENT,
-      Project_Type.MARKETING,
-      undefined,
-    ];
-    if (projectType) {
-      if ([Project_Type.DEVELOPMENT, undefined].includes(projectType)) {
-        typeOfProject = [undefined, Project_Type.DEVELOPMENT];
+  async getMyProjects(filter) {
+    try {
+      const {
+        user,
+        orgId,
+        status,
+        projectType,
+        assignees,
+        technologies,
+        page,
+        limit,
+        search,
+      } = filter;
+      const fields = [
+        'title',
+        'logo',
+        'startedAt',
+        'dueDate',
+        'team',
+        'projectManagers',
+        'technologies',
+        'projectType',
+      ];
+      let typeOfProject = [
+        Project_Type.DEVELOPMENT,
+        Project_Type.MARKETING,
+        undefined,
+      ];
+      if (projectType) {
+        if ([Project_Type.DEVELOPMENT, undefined].includes(projectType)) {
+          typeOfProject = [undefined, Project_Type.DEVELOPMENT];
+        } else {
+          typeOfProject = [projectType];
+        }
+      }
+      const projections = {};
+      const projectList = [];
+      let users = [];
+      fields.forEach((element) => {
+        projections[element] = 1;
+      });
+      let projects;
+      const tech = Array.isArray(technologies) ? technologies : [];
+      const assign = Array.isArray(assignees) ? assignees : [];
+      const skip = (Number(page) - 1) * Number(limit);
+      let filterToAdd: any = {
+        organisation: orgId,
+        status,
+        projectType: {
+          $in: typeOfProject,
+        },
+        ...(search && { title: { $regex: search, $options: 'i' } }),
+        ...(assign?.length && {
+          $or: [
+            { team: { $in: assign } },
+            { projectManagers: { $in: assignees } },
+          ],
+        }),
+        ...(tech?.length && { technologies: { $in: tech } }),
+      };
+      if (['Admin', 'Member++'].includes(user.type)) {
+        projects = await this.projectModel
+          .find(filterToAdd, projections)
+          .select(['+paymentInfo'])
+          .sort({ _id: -1 })
+          .limit(limit ? Number(limit) : 10)
+          .skip(skip ? Number(skip) : 0);
       } else {
-        typeOfProject = [projectType];
+        filterToAdd = {
+          ...filterToAdd,
+          $or: [{ team: user._id }, { projectManagers: user._id }],
+        };
+        projects = await this.projectModel
+          .find(filterToAdd, projections)
+          .sort({ _id: -1 })
+          .limit(limit ? Number(limit) : 10)
+          .skip(skip ? Number(skip) : 0);
       }
-    }
-    const projections = {};
-    const projectList = [];
-    let users = [];
-    fields.forEach((element) => {
-      projections[element] = 1;
-    });
-    let projects;
-    if (['Admin', 'Member++'].includes(user.type)) {
-      projects = await this.projectModel
-        .find(
-          {
-            organisation: orgId,
-            status,
-            projectType: {
-              $in: typeOfProject,
-            },
-          },
-          projections,
-        )
-        .select(['+paymentInfo'])
-        .sort({ _id: -1 });
-    } else {
-      projects = await this.projectModel
-        .find(
-          {
-            organisation: orgId,
-            status,
-            projectType: {
-              $in: typeOfProject,
-            },
-            // projectType === Project_Type.DEVELOPMENT
-            //   ? { $in: [undefined, projectType] }
-            //   : projectType,
-            $or: [{ team: user._id }, { projectManagers: user._id }],
-          },
-          projections,
-        )
-        .sort({ _id: -1 });
-    }
+      projects.forEach((element) => {
+        if (element?.team && element?.team?.length > 0) {
+          users.push(...element.team);
+        }
+        if (element?.projectManagers && element?.projectManagers?.length) {
+          users.push(...element.projectManagers);
+        }
+        projectList.push(element._id);
+      });
 
-    projects.forEach((element) => {
-      if (element.team.length > 0) {
-        users.push(...element.team);
-      }
-      if (element.projectManagers.length) {
-        users.push(...element.projectManagers);
-      }
-      projectList.push(element._id);
-    });
+      const count = await this.tasksService.getMilestoneCount(projectList);
 
-    const count = await this.tasksService.getMilestoneCount(projectList);
+      users = [...new Set(users)];
 
-    users = [...new Set(users)];
-
-    users = await this.usersService.getMultUsers(
-      { _id: { $in: users } },
-      { name: 1, profilePicture: 1 },
-    );
-
-    for (let i = 0; i < projects.length; i++) {
-      let teamFull = [];
-      let team = [];
-      let projectManagersFull = [];
-      let projectManagers = [];
-
-      if (projects[i].team.length > 0) {
-        projects[i].team.forEach((element1) => {
-          team.push(String(element1));
-        });
-      }
-
-      if (projects[i].projectManagers.length > 0) {
-        projects[i].projectManagers.forEach((element1) => {
-          projectManagers.push(String(element1));
-        });
-      }
-
-      const { todosCount, tasksCount } = await this.tasksService.getTasksCount(
-        projects[i]._id,
+      users = await this.usersService.getMultUsers(
+        { _id: { $in: users } },
+        { name: 1, profilePicture: 1 },
       );
 
-      users.forEach((element1, index) => {
-        if (team.includes(String(element1._id))) {
-          teamFull.push(element1);
-        } else if (projectManagers.includes(String(element1._id))) {
-          projectManagersFull.push(element1);
-        }
-      });
-      let a = todosCount;
-      let b = tasksCount;
-      projects[i].team = teamFull;
-      projects[i].projectManagers = projectManagersFull;
-      projects[i]._doc.todosCount = a;
-      projects[i]._doc.tasksCount = b;
-      projects[i]._doc.milestoneCount = {};
-      if (!!projects[i]._doc.paymentInfo?.currency) {
-        const curr = this.utilsService.decryptData(
-          projects[i]._doc.paymentInfo?.currency,
-        );
-        projects[i]._doc.paymentInfo.currency = curr;
-      }
-      projects[i]._doc.milestoneCount = count[String(projects[i]._id)];
-    }
+      for (let i = 0; i < projects.length; i++) {
+        let teamFull = [];
+        let team = [];
+        let projectManagersFull = [];
+        let projectManagers = [];
 
-    return { message: '', data: { projects }, status: 'Successful' };
+        if (projects[i]?.team?.length > 0) {
+          projects[i].team.forEach((element1) => {
+            team.push(String(element1));
+          });
+        }
+
+        if (projects[i].projectManagers?.length > 0) {
+          projects[i].projectManagers.forEach((element1) => {
+            projectManagers.push(String(element1));
+          });
+        }
+
+        const { todosCount, tasksCount } =
+          await this.tasksService.getTasksCount(projects[i]._id);
+
+        users.forEach((element1, index) => {
+          if (team.includes(String(element1._id))) {
+            teamFull.push(element1);
+          } else if (projectManagers.includes(String(element1._id))) {
+            projectManagersFull.push(element1);
+          }
+        });
+        let a = todosCount;
+        let b = tasksCount;
+        projects[i].team = teamFull;
+        projects[i].projectManagers = projectManagersFull;
+        projects[i]._doc.todosCount = a;
+        projects[i]._doc.tasksCount = b;
+        projects[i]._doc.milestoneCount = {};
+        if (!!projects[i]._doc.paymentInfo?.currency) {
+          const curr = this.utilsService.decryptData(
+            projects[i]._doc.paymentInfo?.currency,
+          );
+          projects[i]._doc.paymentInfo.currency = curr;
+        }
+        projects[i]._doc.milestoneCount = count[String(projects[i]._id)];
+      }
+
+      return {
+        message: '',
+        data: {
+          projects,
+          meta: this.utilsService.getMetaData({
+            limit: limit,
+            page,
+            total: projects.length,
+          }),
+        },
+        status: 'Successful',
+      };
+    } catch (error) {
+      console.error('Error in getMyProjects', error);
+      throw new InternalServerErrorException(error);
+    }
   }
 
   //==================================================//
@@ -1946,10 +1980,16 @@ export class ProjectsService {
     };
   }
 
-  async getInvoiceProjects(status: string, filter?: any, dataType?: string) {
+  async getInvoiceProjects(
+    status: string,
+    filter?: any,
+    dataType?: string,
+    organisation?: string,
+  ) {
     const $match = {
       ...(status && { status }),
       ...(filter && { ...filter }),
+      organisation: new mongoose.Types.ObjectId(organisation),
     };
     const $project = {
       _id: 1,

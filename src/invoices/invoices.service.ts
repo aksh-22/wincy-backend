@@ -270,7 +270,6 @@ export class InvoicesService {
     //   { invoice: invoiceId, project: projectId },
     //   {},
     // );
-    // console.log('transactions', JSON.stringify(transactions, null, 2));
     // if (transactions.length > 0) {
     //   throw new HttpException(
     //     'You can not delete invoice with existing transactions!',
@@ -443,7 +442,6 @@ export class InvoicesService {
   //   for (let index = 0; index < invoices.length; index++) {
   //     const el = invoices[index];
   //     if (!el.services[0].paymentPhaseId && el.paymentPhase[0]) {
-  //       console.log('el.paymentPhase', el.services);
   //       for (let index = 0; index < el.services.length; index++) {
   //         let elementService = el.services[index];
 
@@ -454,7 +452,6 @@ export class InvoicesService {
   //         el.services[index] = elementService;
   //       }
   //       invoices[index] = el;
-  //       console.log('services', el.services);
   //       await el.save();
   //     }
   //   }

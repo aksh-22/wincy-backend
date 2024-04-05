@@ -1,15 +1,22 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import * as mongoose from 'mongoose';
 import { Model } from 'mongoose';
+import { INVOICE_STATUS } from 'src/invoice/enum/status.enum';
+import { InvoiceService } from 'src/invoice/invoice.service';
+import { UtilsService } from 'src/utils/utils.service';
 import { CreatePaymentScheduleDto } from './dto/create-payment-schedule.dto';
+import { UpdatePaymentScheduleDto } from './dto/update-payment-schedule.dto';
+import { PAYMENT_SCHEDULE_STATUS } from './paymentSchedule.enum';
 import {
   PaymentScheduleDocument,
   PaymentScheduleModel,
 } from './schema/paymentSchedule.schema';
-import { UtilsService } from 'src/utils/utils.service';
-import { UpdatePaymentScheduleDto } from './dto/update-payment-schedule.dto';
-import * as mongoose from 'mongoose';
-import { InvoiceService } from 'src/invoice/invoice.service';
 
 @Injectable()
 export class PaymentScheduleService {
@@ -120,8 +127,15 @@ export class PaymentScheduleService {
       let filterData = {
         isDeleted: false,
         ...(projectId && { projectId: mongoose.Types.ObjectId(projectId) }),
-        ...(status && { status }),
       };
+      if (status) {
+        if (Array.isArray(status)) {
+          filterData['status'] = { $in: status };
+        } else {
+          filterData['status'] = status;
+        }
+      }
+
       let match = {};
       if (month) {
         if (!year) {
@@ -183,33 +197,50 @@ export class PaymentScheduleService {
   }
 
   async updatePaymentSchedule(body: UpdatePaymentScheduleDto, user: any) {
-    const filter = {
-      _id: body.paymentScheduleId,
-      projectId: body.projectId,
-    };
-    const PS = await this.PaymentScheduleMOdel.find(filter);
+    try {
+      const filter = {
+        _id: body.paymentScheduleId,
+        projectId: body.projectId,
+      };
+      const PS = await this.PaymentScheduleMOdel.find(filter);
 
-    let { paymentSchedule, amountObj } = this.updatePS(PS[0], body);
+      let { paymentSchedule, amountObj } = this.updatePS(PS[0], body);
 
-    if (amountObj) {
-      let { amount, oldAmount } = amountObj;
-      amount = await this.utilsService.encryptData(String(amount));
-      paymentSchedule.amount = amount;
+      if (amountObj) {
+        let { amount, oldAmount } = amountObj;
+        amount = await this.utilsService.encryptData(String(amount));
+        paymentSchedule.amount = amount;
+      }
+
+      await paymentSchedule.save();
+
+      if (body?.status === PAYMENT_SCHEDULE_STATUS.PAID) {
+        const invoice = await this.invoiceService.getOne({
+          paymentSchedule: paymentSchedule._id,
+        });
+        // ! only for those in which it has only one PS
+        if (invoice?.paymentSchedule?.length === 1) {
+          invoice.status = INVOICE_STATUS.PAID;
+          await invoice.save();
+        }
+      }
+
+      const paymentSchedules = await this.getPsAgg({
+        type: user.type,
+        filter: {
+          _id: paymentSchedule._id,
+        },
+      });
+
+      return {
+        message: 'successful',
+        data: { paymentSchedule: paymentSchedules[0] },
+      };
+    } catch (error) {
+      console.error('Error in updatePaymentSchedule', error);
+
+      throw new InternalServerErrorException(error);
     }
-
-    await paymentSchedule.save();
-
-    const paymentSchedules = await this.getPsAgg({
-      type: user.type,
-      filter: {
-        _id: paymentSchedule._id,
-      },
-    });
-
-    return {
-      message: 'successful',
-      data: { paymentSchedule: paymentSchedules[0] },
-    };
   }
 
   async deletePaymentSchedule(paymentScheduleId: string) {

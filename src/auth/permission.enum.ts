@@ -2,13 +2,16 @@ export enum Permission {
   CREATE_INVOICE = 'CREATE_INVOICE',
   GET_INVOICES = 'GET_INVOICES',
   GIVE_PERMISSION = 'GIVE_PERMISSION',
-  BASIC_USER = 'BASIC_USER',
+  // BASIC_USER = 'BASIC_USER',
   ADMIN_USER = 'ADMIN_USER',
   MARKETING = 'MARKETING',
   EOD = 'EOD',
   INVOICE = 'INVOICE',
   GET_SCHEDULES = 'GET_SCHEDULES',
   PERMIT_SCHEDULE = 'PERMIT_SCHEDULE',
+  PROFILE = 'PROFILE',
+  UPDATE_PROFILE = 'UPDATE_PROFILE',
+  BUILD_MANAGER = 'BUILD_MANAGER',
 }
 
 export const permissionArray = [
@@ -16,10 +19,11 @@ export const permissionArray = [
   Permission.GET_INVOICES,
   Permission.GIVE_PERMISSION,
   Permission.ADMIN_USER,
-  Permission.BASIC_USER,
+  // Permission.BASIC_USER,
   Permission.MARKETING,
   Permission.EOD,
   Permission.INVOICE,
   Permission.GET_SCHEDULES,
   Permission.PERMIT_SCHEDULE,
+  Permission.UPDATE_PROFILE,
 ];
